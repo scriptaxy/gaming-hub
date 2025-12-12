@@ -184,9 +184,9 @@ _gamesHeader.Frame = new CGRect(padding, gamesHeaderY, width - padding * 2, 24);
           {
  var streamVC = new GameStreamViewController(
          _userData.RemotePCHost!,
-   5002, // Stream port
-          _userData.RemotePCAuthToken);
-              PresentViewController(streamVC, true, null);
+       19501, // Stream WebSocket port
+               _userData.RemotePCAuthToken);
+     PresentViewController(streamVC, true, null);
      }));
 
   PresentViewController(alert, true, null);
@@ -436,31 +436,31 @@ _loadingIndicator.StopAnimating();
 
    // Add option to launch and stream
             alert.AddAction(UIAlertAction.Create("Launch & Stream", UIAlertActionStyle.Default, async _ =>
-  {
-_loadingIndicator.StartAnimating();
-        var success = await RemotePCService.Instance.LaunchGameAsync(
-  _userData.RemotePCHost!,
-            _userData.RemotePCPort,
-       game.Id,
-    _userData.RemotePCAuthToken);
-
-        _loadingIndicator.StopAnimating();
-
-       if (success)
-                {
-           // Wait a bit for game to start, then open stream
-                    await Task.Delay(2000);
-                 var streamVC = new GameStreamViewController(
+        {
+      _loadingIndicator.StartAnimating();
+  var success = await RemotePCService.Instance.LaunchGameAsync(
     _userData.RemotePCHost!,
- 5002,
-         _userData.RemotePCAuthToken);
-           PresentViewController(streamVC, true, null);
-  }
-      else
-    {
+    _userData.RemotePCPort,
+  game.Id,
+       _userData.RemotePCAuthToken);
+
+          _loadingIndicator.StopAnimating();
+
+     if (success)
+       {
+   // Wait a bit for game to start, then open stream
+   await Task.Delay(2000);
+        var streamVC = new GameStreamViewController(
+         _userData.RemotePCHost!,
+   19501, // Stream WebSocket port
+     _userData.RemotePCAuthToken);
+            PresentViewController(streamVC, true, null);
+     }
+    else
+     {
         ShowAlert("Failed", "Could not launch the game.");
-        }
-            }));
+     }
+      }));
 
       PresentViewController(alert, true, null);
         }
@@ -655,10 +655,10 @@ _loadingIndicator.StartAnimating();
 
     public override string TitleForFooter(UITableView tableView, nint section) => section switch
     {
-    0 => "Enter your PC's IP address and port (default: 5000).",
-            1 => "MAC address enables Wake-on-LAN. Auth token is optional.",
-     _ => ""
-        };
+   0 => "Enter your PC's IP address and port (default: 19500).",
+      1 => "MAC address enables Wake-on-LAN. Auth token is optional.",
+         _ => ""
+     };
 
         public override UITableViewCell GetCell(UITableView tableView, NSIndexPath indexPath)
    {
@@ -695,8 +695,8 @@ cell.TextLabel!.Text = "Host / IP";
  {
    cell.TextLabel!.Text = "Port";
     _portField = textField;
-               textField.Placeholder = "5000";
-          textField.Text = _userData?.RemotePCPort.ToString() ?? "5000";
+               textField.Placeholder = "19500";
+                    textField.Text = _userData?.RemotePCPort.ToString() ?? "19500";
         }
    }
  else if (indexPath.Section == 1)
@@ -741,9 +741,9 @@ cell.TextLabel!.Text = "Host / IP";
             }
 
    if (!int.TryParse(portText, out var port))
-              port = 5000;
+     port = 19500;
 
- var alert = UIAlertController.Create("Testing...", $"Connecting to {host}:{port}", UIAlertControllerStyle.Alert);
+            var alert = UIAlertController.Create("Testing...", $"Connecting to {host}:{port}", UIAlertControllerStyle.Alert);
        PresentViewController(alert, true, null);
 
             var status = await RemotePCService.Instance.GetStatusAsync(host, port, _tokenField?.Text);
@@ -752,31 +752,31 @@ cell.TextLabel!.Text = "Host / IP";
 
           if (status.IsOnline)
             {
-       ShowAlert("Connected", $"Host: {status.Hostname}\nCPU: {status.CpuUsage:0}%\nRAM: {status.MemoryUsage:0}%");
-            }
+   ShowAlert("Connected", $"Host: {status.Hostname}\nCPU: {status.CpuUsage:0}%\nRAM: {status.MemoryUsage:0}%");
+ }
             else
- {
-          var pingOk = await RemotePCService.Instance.PingAsync(host, port);
-    if (pingOk)
-          ShowAlert("Partial Connection", $"Can reach {host}:{port} but the app is not responding correctly.");
-            else
-     ShowAlert("Connection Failed", $"Cannot reach {host}:{port}. Check that Synktra Companion is running.");
-    }
+         {
+      var pingOk = await RemotePCService.Instance.PingAsync(host, port);
+        if (pingOk)
+   ShowAlert("Partial Connection", $"Can reach {host}:{port} but the app is not responding correctly.");
+   else
+   ShowAlert("Connection Failed", $"Cannot reach {host}:{port}. Check that Synktra Companion is running.");
+      }
         }
 
-        private async void SaveSettings(object? sender, EventArgs e)
-    {
-      if (_userData == null) _userData = new UserData();
+ private async void SaveSettings(object? sender, EventArgs e)
+      {
+    if (_userData == null) _userData = new UserData();
 
-            _userData.RemotePCHost = _hostField?.Text?.Trim();
-   _userData.RemotePCPort = int.TryParse(_portField?.Text?.Trim(), out var port) ? port : 5000;
-            _userData.RemotePCMacAddress = _macField?.Text?.Trim()?.ToUpper();
-  _userData.RemotePCAuthToken = _tokenField?.Text?.Trim();
+ _userData.RemotePCHost = _hostField?.Text?.Trim();
+   _userData.RemotePCPort = int.TryParse(_portField?.Text?.Trim(), out var port) ? port : 19500;
+      _userData.RemotePCMacAddress = _macField?.Text?.Trim()?.ToUpper();
+            _userData.RemotePCAuthToken = _tokenField?.Text?.Trim();
 
-            await DatabaseService.Instance.SaveUserDataAsync(_userData);
- SettingsSaved?.Invoke(this, _userData);
-      NavigationController?.PopViewController(true);
-    }
+     await DatabaseService.Instance.SaveUserDataAsync(_userData);
+            SettingsSaved?.Invoke(this, _userData);
+       NavigationController?.PopViewController(true);
+        }
 
         private void ShowAlert(string title, string message)
      {
