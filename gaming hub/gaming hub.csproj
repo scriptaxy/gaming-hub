@@ -8,16 +8,34 @@
     <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
     <MtouchLink>SdkOnly</MtouchLink>
 
+    <!-- App Info -->
+    <ApplicationTitle>Synktra</ApplicationTitle>
+    <ApplicationId>com.scriptaxy.synktra</ApplicationId>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+    
+    <!-- Assembly Info -->
+    <AssemblyName>Synktra</AssemblyName>
+    <Product>Synktra</Product>
+    <Authors>Scriptaxy</Authors>
+    <Company>Scriptaxy</Company>
+    <Copyright>© 2025 Scriptaxy. All rights reserved.</Copyright>
+    <Description>Your ultimate gaming companion - manage your game library, find deals, and control your gaming PC remotely.</Description>
+
     <!--
       Enable full trimming in Release mode.
       To learn more, see: https://learn.microsoft.com/dotnet/core/deploying/trimming/trimming-options#trimming-options
-  -->
-    <TrimMode Condition="'$(Configuration)' == 'Release'">full</TrimMode>
+    -->
+  <TrimMode Condition="'$(Configuration)' == 'Release'">full</TrimMode>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="sqlite-net-pcl" Version="1.9.172" />
     <PackageReference Include="SQLitePCLRaw.bundle_green" Version="2.1.10" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <BundleResource Include="Resources\AppIcon.png" />
   </ItemGroup>
 </Project>

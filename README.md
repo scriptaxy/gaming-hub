@@ -1,4 +1,6 @@
-# ?? Gaming Hub
+# ?? Synktra
+
+**By Scriptaxy**
 
 A comprehensive iOS gaming companion app built with .NET 9 and UIKit.
 
@@ -9,6 +11,8 @@ A comprehensive iOS gaming companion app built with .NET 9 and UIKit.
 - ?? **Upcoming Releases** - Track game release dates with countdown timers
 - ??? **Remote PC** - Wake-on-LAN, launch games remotely, view PC status
 - ?? **Steam Integration** - Sync your Steam library automatically
+- ?? **Epic Games Integration** - Connect and sync your Epic Games library
+- ?? **Dark/Light Mode** - Full theme support
 
 ## Screenshots
 
@@ -75,6 +79,12 @@ With a paid developer account, you can:
 2. Get API key from [Steam Web API](https://steamcommunity.com/dev/apikey)
 3. Enter both in Settings > Steam
 
+### Epic Games Integration
+
+1. Go to Settings > Epic Games
+2. Sign in with your Epic Games account
+3. Sync your library automatically
+
 ### RAWG API (for game search)
 
 1. Get free API key from [RAWG.io](https://rawg.io/apidocs)
@@ -94,6 +104,7 @@ Requires a companion server running on your PC. The app expects these endpoints:
 - [CheapShark](https://www.cheapshark.com/) - Game deals (free, no key needed)
 - [RAWG](https://rawg.io/) - Game database (free tier available)
 - [Steam Web API](https://developer.valvesoftware.com/wiki/Steam_Web_API) - Steam integration
+- [Epic Games](https://dev.epicgames.com/) - Epic Games integration
 
 ## Tech Stack
 
@@ -101,30 +112,37 @@ Requires a companion server running on your PC. The app expects these endpoints:
 - **UIKit** (native iOS UI)
 - **SQLite** for local storage
 - **Newtonsoft.Json** for API parsing
+- **WebKit** for OAuth authentication
 
 ## Project Structure
 
 ```
 gaming hub/
 ??? Models/
-?   ??? Game.cs       # Game entity
-?   ??? UserData.cs      # User settings, deals, releases
+?   ??? Game.cs           # Game entity
+?   ??? UserData.cs       # User settings, deals, releases
 ??? Services/
-?   ??? DatabaseService.cs   # SQLite operations
-?   ??? GameApiService.cs    # RAWG + CheapShark APIs
-?   ??? SteamService.cs      # Steam API integration
-?   ??? RemotePCService.cs   # Remote PC control
+?   ??? DatabaseService.cs    # SQLite operations
+?   ??? GameApiService.cs     # RAWG + CheapShark APIs
+?   ??? SteamService.cs       # Steam API integration
+?   ??? EpicGamesService.cs   # Epic Games API integration
+?   ??? RemotePCService.cs    # Remote PC control
 ??? Views/
-?   ??? GameCell.cs      # Game collection cell
-?   ??? CustomCells.cs   # Deal, Release cells
+?   ??? GameCell.cs       # Game collection cell
+?   ??? CustomCells.cs    # Deal, Release cells
 ??? ViewControllers/
 ?   ??? LibraryViewController.cs
-?   ??? DealsViewController.cs
+? ??? DealsViewController.cs
 ?   ??? GameDetailViewController.cs
 ?   ??? RemotePCViewController.cs
-? ??? SettingsViewController.cs
+?   ??? SettingsViewController.cs
+??? Assets.xcassets/      # App icons and images
 ??? MainTabBarController.cs
 ```
+
+## Author
+
+**Scriptaxy** - [GitHub](https://github.com/scriptaxy)
 
 ## License
 
@@ -133,3 +151,7 @@ MIT License - feel free to use and modify!
 ## Contributing
 
 PRs welcome! Please open an issue first for major changes.
+
+---
+
+*© 2025 Scriptaxy. All rights reserved.*
