@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-ios:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,8 +19,12 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
-      - name: Install iOS Workload
-        run: dotnet workload install ios
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install iOS Workload (specific version for Xcode 16)
+        run: |
+          dotnet workload install ios --version 9.0.100
 
       - name: Restore NuGet packages
         run: dotnet restore "gaming hub/gaming hub.csproj"
@@ -32,30 +36,13 @@ jobs:
         run: dotnet build "gaming hub/gaming hub.csproj" -c Release -f net9.0-ios -r ios-arm64 --no-restore
         continue-on-error: true
 
-      - name: Create unsigned IPA (for sideloading)
-        run: |
-          dotnet publish "gaming hub/gaming hub.csproj" \
-            -c Release \
-            -f net9.0-ios \
-            -r ios-arm64 \
-            -p:ArchiveOnBuild=false \
-            -p:BuildIpa=true \
-            -p:CodesignKey="-" \
-            -p:CodesignProvision="" \
-            -o ./publish
-        continue-on-error: true
-   
       - name: List build outputs
         run: |
           echo "=== Simulator Build ==="
           find "gaming hub/bin/Debug" -name "*.app" 2>/dev/null || echo "No simulator app found"
-          echo ""
           echo "=== Release Build ==="
-          find "gaming hub/bin/Release" -name "*.app" -o -name "*.ipa" 2>/dev/null || echo "No release build found"
-          echo ""
-          echo "=== Publish Output ==="
-          ls -la ./publish 2>/dev/null || echo "No publish output"
-      
+          find "gaming hub/bin/Release" -name "*.app" 2>/dev/null || echo "No release build found"
+
       - name: Upload Simulator Build
         uses: actions/upload-artifact@v4
         with:

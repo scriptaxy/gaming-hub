@@ -6,11 +6,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>true</ImplicitUsings>
     <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
+    <MtouchLink>SdkOnly</MtouchLink>
 
     <!--
       Enable full trimming in Release mode.
-      To learn more, see: https://learn.microsoft.com/dotnet/core/deploying/trimming/trimming-options#trimming-granularity
-    -->
+      To learn more, see: https://learn.microsoft.com/dotnet/core/deploying/trimming/trimming-options#trimming-options
+  -->
     <TrimMode Condition="'$(Configuration)' == 'Release'">full</TrimMode>
   </PropertyGroup>
 
