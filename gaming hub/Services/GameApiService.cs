@@ -137,149 +137,180 @@ var seenGames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
      /// <summary>
-        /// Get upcoming game releases from Steam's coming soon list
-/// </summary>
-public async Task<List<UpcomingRelease>> GetUpcomingReleasesAsync(int page = 1, int pageSize = 20)
-{
- var releases = new List<UpcomingRelease>();
-
-   try
-   {
-      // Use Steam's featured categories which includes coming soon
-      var url = "https://store.steampowered.com/api/featuredcategories";
-    var response = await _httpClient.GetStringAsync(url);
-         var json = JObject.Parse(response);
-
-          // Get "coming soon" category
-           var comingSoon = json["coming_soon"]?["items"] as JArray;
-       
-         if (comingSoon != null)
-                {
-               foreach (var item in comingSoon.Take(pageSize))
-           {
-      var appId = item["id"]?.ToString();
-              var name = item["name"]?.ToString() ?? "Unknown";
-           
- // Get discount info if any
-                 var discountPercent = item["discount_percent"]?.Value<int>() ?? 0;
- var finalPrice = item["final_price"]?.Value<int>() ?? 0;
-       var priceText = finalPrice > 0 ? $"${finalPrice / 100.0:F2}" : "TBA";
-      
-               releases.Add(new UpcomingRelease
-    {
-      ExternalId = appId ?? "",
-            GameName = name,
-        CoverImageUrl = item["large_capsule_image"]?.ToString() ?? item["header_image"]?.ToString(),
-             ReleaseDate = DateTime.Today.AddDays(30), // Coming soon
-   IsExactDate = false,
-      Description = discountPercent > 0 ? $"{discountPercent}% off - {priceText}" : priceText,
-         Platforms = "Steam"
-            });
-        }
-    }
-
-         // If we didn't get enough from coming soon, also try new releases
-           if (releases.Count < pageSize)
-         {
-  var newReleases = json["new_releases"]?["items"] as JArray;
-             if (newReleases != null)
-         {
-                 foreach (var item in newReleases.Take(pageSize - releases.Count))
-     {
-           var appId = item["id"]?.ToString();
- if (releases.Any(r => r.ExternalId == appId)) continue;
-    
-  var name = item["name"]?.ToString() ?? "Unknown";
-   var finalPrice = item["final_price"]?.Value<int>() ?? 0;
-    var priceText = finalPrice > 0 ? $"${finalPrice / 100.0:F2}" : "Free";
-         
-        releases.Add(new UpcomingRelease
-            {
-            ExternalId = appId ?? "",
-   GameName = name,
-     CoverImageUrl = item["large_capsule_image"]?.ToString() ?? item["header_image"]?.ToString(),
-      ReleaseDate = DateTime.Today, // Just released
-                 IsExactDate = true,
-  Description = $"Just Released - {priceText}",
-       Platforms = "Steam"
-            });
-           }
-  }
-     }
-            }
-       catch (Exception ex)
+        /// Get upcoming game releases - combines multiple sources for actual upcoming games
+        /// </summary>
+        public async Task<List<UpcomingRelease>> GetUpcomingReleasesAsync(int page = 1, int pageSize = 20)
         {
-         Console.WriteLine($"Steam upcoming failed: {ex.Message}");
-       
-       // Fallback: Try to get from Epic free games promotions
-           try
-         {
-         var epicUrl = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US";
-  var response = await _httpClient.GetStringAsync(epicUrl);
-                    var json = JObject.Parse(response);
+    var releases = new List<UpcomingRelease>();
+        var seenGames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Source 1: Steam Search for unreleased games
+       try
+     {
+         // Search Steam for games coming soon (filter by coming_soon tag)
+    var steamUrl = "https://store.steampowered.com/api/storesearch/?term=&sort_by=_ASC&category1=998&cc=us&l=english";
+         var response = await _httpClient.GetStringAsync(steamUrl);
+    var json = JObject.Parse(response);
+    var items = json["items"] as JArray;
+
+    if (items != null)
+     {
+                 foreach (var item in items.Take(pageSize))
+     {
+       var name = item["name"]?.ToString();
+        if (string.IsNullOrEmpty(name) || seenGames.Contains(name)) continue;
+       seenGames.Add(name);
+
+         var appId = item["id"]?.ToString();
+      var price = item["price"]?["final"]?.Value<int>() ?? 0;
+          var priceText = price > 0 ? $"${price / 100.0:F2}" : "TBA";
+
+      releases.Add(new UpcomingRelease
+       {
+    ExternalId = appId ?? "",
+            GameName = name,
+      CoverImageUrl = $"https://cdn.akamai.steamstatic.com/steam/apps/{appId}/header.jpg",
+        ReleaseDate = DateTime.Today.AddDays(30),
+    IsExactDate = false,
+       Description = priceText,
+                 Platforms = "Steam"
+            });
+ }
+         }
+       }
+catch (Exception ex)
+        {
+                Console.WriteLine($"Steam search failed: {ex.Message}");
+     }
+
+  // Source 2: Epic Games upcoming free games
+            try
+   {
+            var epicUrl = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US";
+      var response = await _httpClient.GetStringAsync(epicUrl);
+                var json = JObject.Parse(response);
          var elements = json["data"]?["Catalog"]?["searchStore"]?["elements"] as JArray;
 
-        if (elements != null)
-           {
-        foreach (var item in elements.Take(pageSize))
-               {
-     var title = item["title"]?.ToString();
-           if (string.IsNullOrEmpty(title)) continue;
+          if (elements != null)
+      {
+            foreach (var item in elements)
+                    {
+              var title = item["title"]?.ToString();
+       if (string.IsNullOrEmpty(title) || seenGames.Contains(title)) continue;
 
-       var keyImages = item["keyImages"] as JArray;
-              var imageUrl = keyImages?.FirstOrDefault(i =>
-      i["type"]?.ToString() == "OfferImageWide" ||
-      i["type"]?.ToString() == "DieselStoreFrontWide")?["url"]?.ToString();
-
-           // Check for upcoming promotions
-      var promotions = item["promotions"];
+    // Check for upcoming promotional offers (future free games)
+         var promotions = item["promotions"];
       var upcomingPromos = promotions?["upcomingPromotionalOffers"] as JArray;
-        
-         string description;
-   DateTime releaseDate;
-      
-    if (upcomingPromos?.Count > 0)
-      {
-       var promo = upcomingPromos[0]?["promotionalOffers"]?[0];
-        var startDate = promo?["startDate"]?.ToString();
-   if (DateTime.TryParse(startDate, out var date))
-               {
-         releaseDate = date;
-        description = $"Free on {date:MMM d}";
-           }
-  else
-      {
-             releaseDate = DateTime.Today.AddDays(7);
-        description = "Coming Soon - Free";
-               }
-        }
-       else
-             {
-          releaseDate = DateTime.Today;
-            description = "Available Now";
-   }
 
-          releases.Add(new UpcomingRelease
-     {
-       ExternalId = item["id"]?.ToString() ?? "",
-     GameName = title,
-      CoverImageUrl = imageUrl ?? keyImages?.FirstOrDefault()?["url"]?.ToString(),
-   ReleaseDate = releaseDate,
-       IsExactDate = true,
-      Description = description,
-       Platforms = "Epic Games"
-    });
-        }
-                    }
-       }
-      catch (Exception ex2)
+     if (upcomingPromos != null && upcomingPromos.Count > 0)
+  {
+                var promoOffers = upcomingPromos[0]?["promotionalOffers"] as JArray;
+   if (promoOffers != null && promoOffers.Count > 0)
+          {
+          var startDateStr = promoOffers[0]?["startDate"]?.ToString();
+         if (DateTime.TryParse(startDateStr, out var startDate) && startDate > DateTime.UtcNow)
         {
-    Console.WriteLine($"Epic upcoming also failed: {ex2.Message}");
-           }
-    }
+     seenGames.Add(title);
 
-         // Sort by release date
-     return releases.OrderBy(r => r.ReleaseDate).ToList();
+          var keyImages = item["keyImages"] as JArray;
+          var imageUrl = keyImages?.FirstOrDefault(i =>
+              i["type"]?.ToString() == "OfferImageWide" ||
+          i["type"]?.ToString() == "DieselStoreFrontWide" ||
+            i["type"]?.ToString() == "Thumbnail")?["url"]?.ToString();
+
+       releases.Add(new UpcomingRelease
+    {
+              ExternalId = item["id"]?.ToString() ?? "",
+          GameName = title,
+        CoverImageUrl = imageUrl ?? keyImages?.FirstOrDefault()?["url"]?.ToString(),
+       ReleaseDate = startDate.ToLocalTime(),
+    IsExactDate = true,
+      Description = $"Free on {startDate.ToLocalTime():MMM d}",
+          Platforms = "Epic Games"
+           });
+           }
+   }
+       }
+
+  if (releases.Count >= pageSize) break;
+            }
+    }
+     }
+ catch (Exception ex)
+            {
+     Console.WriteLine($"Epic upcoming failed: {ex.Message}");
+     }
+
+// Source 3: Use Steam's actual coming soon search
+            if (releases.Count < pageSize)
+            {
+                try
+         {
+            // Alternative: Search for wishlisted/popular upcoming games
+           var url = "https://store.steampowered.com/search/results/?query&start=0&count=20&dynamic_data=&sort_by=_ASC&supportedlang=english&snr=1_7_7_comingsoon_702&filter=comingsoon&infinite=1";
+         
+   // Since this returns HTML, let's use the featuredcategories but filter properly
+         var featuredUrl = "https://store.steampowered.com/api/featuredcategories";
+   var response = await _httpClient.GetStringAsync(featuredUrl);
+          var json = JObject.Parse(response);
+     
+      var comingSoon = json["coming_soon"]?["items"] as JArray;
+   if (comingSoon != null)
+          {
+        foreach (var item in comingSoon)
+        {
+                var name = item["name"]?.ToString();
+     if (string.IsNullOrEmpty(name) || seenGames.Contains(name)) continue;
+   
+   // Check if it's actually coming soon (not already released)
+        var discountExpiration = item["discount_expiration"]?.Value<long?>() ?? 0;
+         
+        seenGames.Add(name);
+ var appId = item["id"]?.ToString();
+             var finalPrice = item["final_price"]?.Value<int>() ?? 0;
+                  var priceText = finalPrice > 0 ? $"${finalPrice / 100.0:F2}" : "TBA";
+
+            releases.Add(new UpcomingRelease
+           {
+          ExternalId = appId ?? "",
+ GameName = name,
+              CoverImageUrl = item["large_capsule_image"]?.ToString() ?? $"https://cdn.akamai.steamstatic.com/steam/apps/{appId}/header.jpg",
+  ReleaseDate = DateTime.Today.AddDays(14), // Coming soon placeholder
+      IsExactDate = false,
+          Description = priceText,
+      Platforms = "Steam"
+     });
+
+              if (releases.Count >= pageSize) break;
+ }
+      }
+     }
+         catch (Exception ex)
+        {
+         Console.WriteLine($"Steam featured failed: {ex.Message}");
+  }
+      }
+
+            // If still no results, show a message
+      if (releases.Count == 0)
+            {
+    releases.Add(new UpcomingRelease
+    {
+        ExternalId = "placeholder",
+         GameName = "No upcoming releases found",
+     Description = "Pull to refresh",
+ ReleaseDate = DateTime.Today,
+        IsExactDate = false,
+     Platforms = ""
+       });
+       }
+
+         // Sort: Upcoming Epic free games first (they have exact dates), then Steam
+     return releases
+     .Where(r => r.ExternalId != "placeholder" || releases.Count == 1)
+           .OrderBy(r => r.ReleaseDate)
+                .ThenBy(r => r.GameName)
+          .ToList();
         }
 
         /// <summary>

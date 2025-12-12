@@ -37,37 +37,44 @@
     </array>
     <key>UISupportedInterfaceOrientations~ipad</key>
     <array>
-<string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortrait</string>
         <string>UIInterfaceOrientationPortraitUpsideDown</string>
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
     <key>XSAppIconAssets</key>
- <string>Assets.xcassets/AppIcon.appiconset</string>
+    <string>Assets.xcassets/AppIcon.appiconset</string>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
         <false/>
         <key>UISceneConfigurations</key>
         <dict>
-    <key>UIWindowSceneSessionRoleApplication</key>
+            <key>UIWindowSceneSessionRoleApplication</key>
     <array>
-           <dict>
-   <key>UISceneConfigurationName</key>
-      <string>Default Configuration</string>
+ <dict>
+  <key>UISceneConfigurationName</key>
+     <string>Default Configuration</string>
   <key>UISceneDelegateClassName</key>
-          <string>SceneDelegate</string>
+                <string>SceneDelegate</string>
+                </dict>
+            </array>
         </dict>
-      </array>
-      </dict>
-    </dict>
+  </dict>
     <key>NSAppTransportSecurity</key>
     <dict>
- <key>NSAllowsArbitraryLoads</key>
-      <true/>
+        <key>NSAllowsArbitraryLoads</key>
+<true/>
+        <key>NSAllowsLocalNetworking</key>
+     <true/>
     </dict>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Synktra needs local network access to connect to your PC for remote gaming features.</string>
+    <string>Synktra needs local network access to connect to your gaming PC for remote control, Wake-on-LAN, and game streaming features.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_http._tcp</string>
+        <string>_synktra._tcp</string>
+    </array>
     <key>UIStatusBarStyle</key>
     <string>UIStatusBarStyleDefault</string>
     <key>UIViewControllerBasedStatusBarAppearance</key>
