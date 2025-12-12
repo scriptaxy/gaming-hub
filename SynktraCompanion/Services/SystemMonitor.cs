@@ -1,203 +1,145 @@
 using System.Diagnostics;
 using System.IO;
-using System.Management;
+using System.Runtime.InteropServices;
 using SynktraCompanion.Models;
 
 namespace SynktraCompanion.Services;
 
 public class SystemMonitor
 {
-    private readonly PerformanceCounter? _cpuCounter;
-    private DateTime _lastCpuCheck = DateTime.MinValue;
-    private double _lastCpuValue;
+    private DateTime _lastCheck = DateTime.MinValue;
+    private SystemStats _cachedStats = new();
+    private readonly TimeSpan _cacheInterval = TimeSpan.FromSeconds(2);
 
-    public SystemMonitor()
-    {
-    try
-        {
-  _cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
- _cpuCounter.NextValue(); // First call always returns 0
-        }
-catch
-   {
-        _cpuCounter = null;
-        }
-    }
+    [DllImport("kernel32.dll")]
+    private static extern bool GetSystemTimes(out long idleTime, out long kernelTime, out long userTime);
+
+    private long _lastIdleTime;
+    private long _lastKernelTime;
+    private long _lastUserTime;
+    private bool _initialized;
 
     public SystemStats GetCurrentStats()
     {
-        return new SystemStats
-    {
-       CpuUsage = GetCpuUsage(),
+        if (DateTime.Now - _lastCheck < _cacheInterval)
+            return _cachedStats;
+
+        _lastCheck = DateTime.Now;
+
+        _cachedStats = new SystemStats
+        {
+            CpuUsage = GetCpuUsage(),
             MemoryUsage = GetMemoryUsage(),
- GpuUsage = GetGpuUsage(),
-      GpuTemperature = GetGpuTemperature()
-      };
- }
+            GpuUsage = null // Skip GPU for performance
+        };
+
+        return _cachedStats;
+    }
 
     private double GetCpuUsage()
     {
-   try
-     {
-     // Throttle CPU checks to avoid high overhead
-     if ((DateTime.Now - _lastCpuCheck).TotalSeconds < 1)
-    return _lastCpuValue;
-
-     _lastCpuCheck = DateTime.Now;
-         _lastCpuValue = _cpuCounter?.NextValue() ?? 0;
-  return _lastCpuValue;
-        }
-        catch
-  {
-            return 0;
- }
-    }
-
-    private double GetMemoryUsage()
- {
         try
-  {
-     var gcMemory = GC.GetGCMemoryInfo();
- var totalMemory = gcMemory.TotalAvailableMemoryBytes;
-       
-       // Use WMI for more accurate system-wide memory
-      using var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_OperatingSystem");
-     foreach (ManagementObject obj in searcher.Get())
+        {
+            if (GetSystemTimes(out long idleTime, out long kernelTime, out long userTime))
             {
-     var total = Convert.ToDouble(obj["TotalVisibleMemorySize"]);
-       var free = Convert.ToDouble(obj["FreePhysicalMemory"]);
- return ((total - free) / total) * 100;
-          }
+                if (!_initialized)
+                {
+                    _lastIdleTime = idleTime;
+                    _lastKernelTime = kernelTime;
+                    _lastUserTime = userTime;
+                    _initialized = true;
+                    return 0;
+                }
+
+                var idleDiff = idleTime - _lastIdleTime;
+                var kernelDiff = kernelTime - _lastKernelTime;
+                var userDiff = userTime - _lastUserTime;
+
+                _lastIdleTime = idleTime;
+                _lastKernelTime = kernelTime;
+                _lastUserTime = userTime;
+
+                var total = kernelDiff + userDiff;
+                if (total == 0) return 0;
+
+                return (1.0 - (double)idleDiff / total) * 100;
+            }
         }
         catch { }
-        
         return 0;
     }
 
- private double? GetGpuUsage()
+    private double GetMemoryUsage()
     {
         try
         {
-     // Try NVIDIA first
-    using var searcher = new ManagementObjectSearcher(
-     @"root\CIMV2", 
-        "SELECT * FROM Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine");
-            
- double totalUsage = 0;
-      int count = 0;
-  
-    foreach (ManagementObject obj in searcher.Get())
- {
-   var engType = obj["Name"]?.ToString() ?? "";
-    if (engType.Contains("engtype_3D"))
-      {
-                    var usage = Convert.ToDouble(obj["UtilizationPercentage"]);
-                    totalUsage += usage;
-count++;
-  }
-          }
-
-            if (count > 0)
-  return totalUsage / count;
-   }
+            var info = GC.GetGCMemoryInfo();
+            if (info.TotalAvailableMemoryBytes > 0)
+            {
+                var used = info.TotalAvailableMemoryBytes - info.HighMemoryLoadThresholdBytes;
+                // Simplified calculation
+                return (double)Process.GetCurrentProcess().WorkingSet64 / info.TotalAvailableMemoryBytes * 100 * 10;
+            }
+        }
         catch { }
 
-        return null;
-    }
-
-    private double? GetGpuTemperature()
-    {
- try
-  {
-     // Try NVIDIA
-            using var searcher = new ManagementObjectSearcher(
-   @"root\WMI",
-          "SELECT * FROM MSAcpi_ThermalZoneTemperature");
-  
-          foreach (ManagementObject obj in searcher.Get())
+        // Fallback: use process memory relative to typical system
+        try
         {
-       var temp = Convert.ToDouble(obj["CurrentTemperature"]);
-   // Convert from tenths of Kelvin to Celsius
- var celsius = (temp / 10.0) - 273.15;
-  if (celsius > 0 && celsius < 150)
-          return celsius;
-     }
+            var processMemory = Process.GetCurrentProcess().WorkingSet64;
+            return Math.Min(processMemory / (16.0 * 1024 * 1024 * 1024) * 100, 100); // Assume 16GB
         }
-      catch { }
+        catch { }
 
- return null;
+        return 0;
     }
 
     public string? GetRunningGame(List<InstalledGame> installedGames)
     {
+        if (installedGames.Count == 0) return null;
+
         try
-   {
-         var runningProcesses = Process.GetProcesses()
-     .Select(p => p.ProcessName.ToLowerInvariant())
-       .ToHashSet();
-
-   foreach (var game in installedGames)
-         {
-       // Check if game executable is running
-   if (!string.IsNullOrEmpty(game.LaunchCommand))
-       {
- var exeName = Path.GetFileNameWithoutExtension(game.LaunchCommand)?.ToLowerInvariant();
-      if (!string.IsNullOrEmpty(exeName) && runningProcesses.Contains(exeName))
-           {
-         return game.Name;
-  }
-       }
-
-    // Check by install path
-        if (!string.IsNullOrEmpty(game.InstallPath) && Directory.Exists(game.InstallPath))
-     {
-          var exeFiles = Directory.GetFiles(game.InstallPath, "*.exe", SearchOption.TopDirectoryOnly);
-      foreach (var exe in exeFiles)
         {
-     var exeName = Path.GetFileNameWithoutExtension(exe)?.ToLowerInvariant();
-               if (!string.IsNullOrEmpty(exeName) && 
-   !exeName.Contains("unins") && 
-              !exeName.Contains("setup") &&
-  !exeName.Contains("crash") &&
-           runningProcesses.Contains(exeName))
-          {
-        return game.Name;
-      }
-    }
-     }
-    }
+            var processes = Process.GetProcesses();
+            var processNames = new HashSet<string>(
+                processes.Select(p =>
+                {
+                    try { return p.ProcessName.ToLowerInvariant(); }
+                    catch { return ""; }
+                }).Where(n => !string.IsNullOrEmpty(n)),
+                StringComparer.OrdinalIgnoreCase);
 
-         // Check common game processes
- var knownGameProcesses = new Dictionary<string, string>
-      {
-        { "csgo", "Counter-Strike 2" },
-                { "cs2", "Counter-Strike 2" },
-       { "dota2", "Dota 2" },
-  { "valorant", "Valorant" },
-         { "valorant-win64-shipping", "Valorant" },
-        { "fortnite", "Fortnite" },
-              { "fortniteclient-win64-shipping", "Fortnite" },
-       { "leagueclient", "League of Legends" },
-    { "league of legends", "League of Legends" },
-      { "minecraft", "Minecraft" },
-    { "rocketleague", "Rocket League" },
-       { "gta5", "Grand Theft Auto V" },
-     { "gtavlauncher", "Grand Theft Auto V" },
-            { "eldenring", "Elden Ring" },
-     { "cyberpunk2077", "Cyberpunk 2077" },
-     { "hogwartslegacy", "Hogwarts Legacy" },
-           { "baldursgate3", "Baldur's Gate 3" },
-      { "bg3", "Baldur's Gate 3" }
-   };
-
- foreach (var kvp in knownGameProcesses)
+            foreach (var game in installedGames)
             {
-     if (runningProcesses.Contains(kvp.Key))
-    return kvp.Value;
- }
+                if (!string.IsNullOrEmpty(game.LaunchCommand))
+                {
+                    var exeName = Path.GetFileNameWithoutExtension(game.LaunchCommand)?.ToLowerInvariant();
+                    if (!string.IsNullOrEmpty(exeName) && processNames.Contains(exeName))
+                        return game.Name;
+                }
+            }
+
+            // Check common games
+            var knownGames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["cs2"] = "Counter-Strike 2",
+                ["dota2"] = "Dota 2",
+                ["valorant-win64-shipping"] = "Valorant",
+                ["fortniteclient-win64-shipping"] = "Fortnite",
+                ["leagueclient"] = "League of Legends",
+                ["rocketleague"] = "Rocket League",
+                ["gta5"] = "GTA V",
+                ["cyberpunk2077"] = "Cyberpunk 2077"
+            };
+
+            foreach (var kvp in knownGames)
+            {
+                if (processNames.Contains(kvp.Key))
+                    return kvp.Value;
+            }
         }
         catch { }
 
-  return null;
+        return null;
     }
 }
