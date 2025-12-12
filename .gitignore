@@ -1,37 +1,38 @@
-# .NET
+# Build outputs
 bin/
 obj/
-*.user
-*.suo
-*.cache
-*.log
+publish/
+publish-single/
+publish-final/
 
 # IDE
 .vs/
-.vscode/
-*.swp
-*~
+.idea/
+*.user
+*.suo
 
 # macOS
 .DS_Store
-*.xcworkspace
 *.xcuserstate
-Pods/
 
-# iOS Build
-*.ipa
-*.dSYM.zip
-*.dSYM
+# Windows
+Thumbs.db
 
-# Secrets (never commit these!)
-*.p12
-*.mobileprovision
-*.cer
+# Logs
+*.log
 
-# Test outputs
-ApiTest/bin/
-ApiTest/obj/
-
-# NuGet
+# Packages
 packages/
-*.nupkg
+
+# Large binaries (use Git LFS for these)
+*.exe
+*.dll
+*.pdb
+
+# Archives
+*.zip
+*.7z
+
+# Temporary files
+*.tmp
+*.temp
