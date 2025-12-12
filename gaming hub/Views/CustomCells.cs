@@ -125,94 +125,132 @@ var data = await ImageClient.GetByteArrayAsync(imageUrl);
     public class ReleaseCell : UITableViewCell
     {
         public static readonly string ReuseId = "ReleaseCell";
-        private UIImageView _coverImageView = null!;
-    private UILabel _titleLabel = null!;
-        private UILabel _dateLabel = null!;
-        private UILabel _countdownLabel = null!;
-  private UILabel _platformsLabel = null!;
-      private UIButton _wishlistButton = null!;
-     private UIView _cardView = null!;
+   private UIImageView _coverImageView = null!;
+        private UILabel _titleLabel = null!;
+      private UILabel _dateLabel = null!;
+        private UILabel _descriptionLabel = null!;
+      private UILabel _platformsLabel = null!;
+        private UIButton _wishlistButton = null!;
+      private UIView _cardView = null!;
         private static readonly HttpClient ImageClient = new();
-    private string? _currentImageUrl;
+        private string? _currentImageUrl;
 
-        public event EventHandler? WishlistToggled;
+   public event EventHandler? WishlistToggled;
 
-  public ReleaseCell(IntPtr handle) : base(handle) => SetupViews();
-     public ReleaseCell(UITableViewCellStyle style, string reuseId) : base(style, reuseId) => SetupViews();
+    public ReleaseCell(IntPtr handle) : base(handle) => SetupViews();
+    public ReleaseCell(UITableViewCellStyle style, string reuseId) : base(style, reuseId) => SetupViews();
 
-   private void SetupViews()
-        {
-      SelectionStyle = UITableViewCellSelectionStyle.None;
-            BackgroundColor = UIColor.Clear;
-     _cardView = new UIView { BackgroundColor = UIColor.SecondarySystemBackground };
+        private void SetupViews()
+     {
+   SelectionStyle = UITableViewCellSelectionStyle.None;
+        BackgroundColor = UIColor.Clear;
+            _cardView = new UIView { BackgroundColor = UIColor.SecondarySystemBackground };
             _cardView.Layer.CornerRadius = 12;
        ContentView.AddSubview(_cardView);
 
-          _coverImageView = new UIImageView { ContentMode = UIViewContentMode.ScaleAspectFill, ClipsToBounds = true, BackgroundColor = UIColor.SystemGray5 };
-         _coverImageView.Layer.CornerRadius = 8;
-   _cardView.AddSubview(_coverImageView);
+            _coverImageView = new UIImageView { ContentMode = UIViewContentMode.ScaleAspectFill, ClipsToBounds = true, BackgroundColor = UIColor.SystemGray5 };
+            _coverImageView.Layer.CornerRadius = 8;
+      _cardView.AddSubview(_coverImageView);
 
- _titleLabel = new UILabel { Font = UIFont.BoldSystemFontOfSize(16), TextColor = UIColor.Label, Lines = 2 };
- _cardView.AddSubview(_titleLabel);
+            _titleLabel = new UILabel { Font = UIFont.BoldSystemFontOfSize(16), TextColor = UIColor.Label, Lines = 2 };
+    _cardView.AddSubview(_titleLabel);
 
-    _dateLabel = new UILabel { Font = UIFont.SystemFontOfSize(13), TextColor = UIColor.SecondaryLabel };
-          _cardView.AddSubview(_dateLabel);
+      _dateLabel = new UILabel { Font = UIFont.SystemFontOfSize(13), TextColor = UIColor.SecondaryLabel };
+   _cardView.AddSubview(_dateLabel);
 
-     _countdownLabel = new UILabel { Font = UIFont.BoldSystemFontOfSize(14), TextColor = UIColor.SystemOrange };
- _cardView.AddSubview(_countdownLabel);
+      _descriptionLabel = new UILabel { Font = UIFont.SystemFontOfSize(13), TextColor = UIColor.SystemGreen };
+   _cardView.AddSubview(_descriptionLabel);
 
-   _platformsLabel = new UILabel { Font = UIFont.SystemFontOfSize(11), TextColor = UIColor.TertiaryLabel };
-     _cardView.AddSubview(_platformsLabel);
+        _platformsLabel = new UILabel { Font = UIFont.SystemFontOfSize(11), TextColor = UIColor.TertiaryLabel };
+  _cardView.AddSubview(_platformsLabel);
 
             _wishlistButton = new UIButton(UIButtonType.System);
-  _wishlistButton.SetImage(UIImage.GetSystemImage("heart"), UIControlState.Normal);
-   _wishlistButton.TintColor = UIColor.SystemRed;
-  _wishlistButton.TouchUpInside += (s, e) => WishlistToggled?.Invoke(this, EventArgs.Empty);
-    _cardView.AddSubview(_wishlistButton);
-  }
+            _wishlistButton.SetImage(UIImage.GetSystemImage("heart"), UIControlState.Normal);
+    _wishlistButton.TintColor = UIColor.SystemRed;
+     _wishlistButton.TouchUpInside += (s, e) => WishlistToggled?.Invoke(this, EventArgs.Empty);
+            _cardView.AddSubview(_wishlistButton);
+        }
 
         public override void LayoutSubviews()
         {
-  base.LayoutSubviews();
-      var bounds = ContentView.Bounds;
-     _cardView.Frame = new CGRect(16, 6, bounds.Width - 32, bounds.Height - 12);
-  var cardBounds = _cardView.Bounds;
-var imageWidth = 100f;
-      _coverImageView.Frame = new CGRect(8, 8, imageWidth, cardBounds.Height - 16);
-            var textX = imageWidth + 20;
+          base.LayoutSubviews();
+         var bounds = ContentView.Bounds;
+            _cardView.Frame = new CGRect(16, 6, bounds.Width - 32, bounds.Height - 12);
+            var cardBounds = _cardView.Bounds;
+            var imageWidth = 100f;
+ _coverImageView.Frame = new CGRect(8, 8, imageWidth, cardBounds.Height - 16);
+        var textX = imageWidth + 20;
        var textWidth = cardBounds.Width - textX - 50;
-            _titleLabel.Frame = new CGRect(textX, 12, textWidth, 40);
-    _dateLabel.Frame = new CGRect(textX, 54, textWidth, 18);
-    _countdownLabel.Frame = new CGRect(textX, 74, textWidth, 18);
- _platformsLabel.Frame = new CGRect(textX, cardBounds.Height - 28, textWidth, 16);
-     _wishlistButton.Frame = new CGRect(cardBounds.Width - 44, 12, 36, 36);
+     _titleLabel.Frame = new CGRect(textX, 12, textWidth, 40);
+          _dateLabel.Frame = new CGRect(textX, 54, textWidth, 18);
+       _descriptionLabel.Frame = new CGRect(textX, 74, textWidth, 18);
+     _platformsLabel.Frame = new CGRect(textX, cardBounds.Height - 28, textWidth, 16);
+ _wishlistButton.Frame = new CGRect(cardBounds.Width - 44, 12, 36, 36);
         }
 
-    public void Configure(UpcomingRelease release)
-  {
-     _titleLabel.Text = release.GameName;
-       _dateLabel.Text = $"?? {release.ReleaseDateText}";
-        _countdownLabel.Text = release.DaysUntilRelease >= 0 ? $"? {release.CountdownText}" : "?? Out Now!";
- _platformsLabel.Text = release.Platforms;
-      _wishlistButton.SetImage(UIImage.GetSystemImage(release.IsWishlisted ? "heart.fill" : "heart"), UIControlState.Normal);
-        LoadImageAsync(release.CoverImageUrl);
-   }
+        public void Configure(UpcomingRelease release)
+        {
+   _titleLabel.Text = release.GameName;
+   
+          // Show release date or countdown
+          if (release.ReleaseDate > DateTime.Today)
+    {
+      var daysUntil = (release.ReleaseDate - DateTime.Today).Days;
+                if (daysUntil == 0)
+       _dateLabel.Text = "?? Releases Today!";
+                else if (daysUntil == 1)
+         _dateLabel.Text = "?? Releases Tomorrow";
+           else if (daysUntil <= 7)
+         _dateLabel.Text = $"?? In {daysUntil} days";
+      else
+         _dateLabel.Text = release.IsExactDate 
+      ? $"?? {release.ReleaseDate:MMM d, yyyy}" 
+   : $"?? Coming Soon";
+         }
+            else
+    {
+    _dateLabel.Text = "?? Just Released";
+  }
+            
+         _descriptionLabel.Text = release.Description ?? "";
+            _platformsLabel.Text = $"via {release.Platforms}";
+            
+       // Color based on description
+       if (release.Description?.Contains("Free") == true)
+       _descriptionLabel.TextColor = UIColor.SystemPurple;
+            else
+                _descriptionLabel.TextColor = UIColor.SystemGreen;
+         
+            _wishlistButton.SetImage(UIImage.GetSystemImage(release.IsWishlisted ? "heart.fill" : "heart"), UIControlState.Normal);
+            LoadImageAsync(release.CoverImageUrl);
+        }
 
         private async void LoadImageAsync(string? imageUrl)
         {
- _currentImageUrl = imageUrl;
- _coverImageView.Image = UIImage.GetSystemImage("gamecontroller.fill");
-    _coverImageView.TintColor = UIColor.SystemGray3;
- if (string.IsNullOrEmpty(imageUrl)) return;
-  try
-  {
-        var data = await ImageClient.GetByteArrayAsync(imageUrl);
-     if (_currentImageUrl != imageUrl) return;
-         var nsData = Foundation.NSData.FromArray(data);
- var image = UIImage.LoadFromData(nsData);
-        InvokeOnMainThread(() => { if (_currentImageUrl == imageUrl) { _coverImageView.Image = image; _coverImageView.TintColor = null; } });
-     }
-    catch { }
+            _currentImageUrl = imageUrl;
+            _coverImageView.Image = UIImage.GetSystemImage("gamecontroller.fill");
+            _coverImageView.TintColor = UIColor.SystemGray3;
+            if (string.IsNullOrEmpty(imageUrl)) return;
+            try
+            {
+           var data = await ImageClient.GetByteArrayAsync(imageUrl);
+         if (_currentImageUrl != imageUrl) return;
+    var nsData = Foundation.NSData.FromArray(data);
+             var image = UIImage.LoadFromData(nsData);
+         InvokeOnMainThread(() => { if (_currentImageUrl == imageUrl) { _coverImageView.Image = image; _coverImageView.TintColor = null; } });
+            }
+  catch { }
+        }
+        
+  public override void PrepareForReuse()
+        {
+            base.PrepareForReuse();
+ _currentImageUrl = null;
+            _coverImageView.Image = UIImage.GetSystemImage("gamecontroller.fill");
+   _titleLabel.Text = null;
+       _dateLabel.Text = null;
+            _descriptionLabel.Text = null;
+       _platformsLabel.Text = null;
         }
     }
 

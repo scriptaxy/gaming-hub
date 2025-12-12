@@ -117,94 +117,126 @@ namespace gaming_hub.ViewControllers
 
  public class ReleasesViewController : UIViewController, IUITableViewDataSource, IUITableViewDelegate
     {
-        private UITableView _tableView = null!;
-        private UIRefreshControl _refreshControl = null!;
+      private UITableView _tableView = null!;
+     private UIRefreshControl _refreshControl = null!;
         private UIActivityIndicatorView _loadingIndicator = null!;
+        private UILabel _emptyLabel = null!;
         private List<UpcomingRelease> _releases = [];
 
-        public override void ViewDidLoad()
-        {
-            base.ViewDidLoad();
-        SetupUI();
-            LoadReleases();
-        }
+  public override void ViewDidLoad()
+ {
+     base.ViewDidLoad();
+      SetupUI();
+     LoadReleases();
+    }
 
-        private void SetupUI()
-        {
-  Title = "Upcoming";
-          View!.BackgroundColor = UIColor.SystemBackground;
-    if (NavigationController != null)
-    NavigationController.NavigationBar.PrefersLargeTitles = true;
+     private void SetupUI()
+     {
+            Title = "Upcoming";
+  View!.BackgroundColor = UIColor.SystemBackground;
+ if (NavigationController != null)
+   NavigationController.NavigationBar.PrefersLargeTitles = true;
 
-     _tableView = new UITableView(CGRect.Empty, UITableViewStyle.Plain)
-            {
- DataSource = this,
+  _tableView = new UITableView(CGRect.Empty, UITableViewStyle.Plain)
+        {
+        DataSource = this,
          Delegate = this,
-         BackgroundColor = UIColor.Clear,
-      SeparatorStyle = UITableViewCellSeparatorStyle.None,
-       RowHeight = 120
-     };
-   _tableView.RegisterClassForCellReuse(typeof(ReleaseCell), ReleaseCell.ReuseId);
+       BackgroundColor = UIColor.Clear,
+  SeparatorStyle = UITableViewCellSeparatorStyle.None,
+    RowHeight = 120
+ };
+      _tableView.RegisterClassForCellReuse(typeof(ReleaseCell), ReleaseCell.ReuseId);
 
-         _refreshControl = new UIRefreshControl();
-          _refreshControl.ValueChanged += async (s, e) => await LoadReleases();
-            _tableView.RefreshControl = _refreshControl;
+ _refreshControl = new UIRefreshControl();
+   _refreshControl.ValueChanged += async (s, e) => await LoadReleases();
+  _tableView.RefreshControl = _refreshControl;
 
-          _loadingIndicator = new UIActivityIndicatorView(UIActivityIndicatorViewStyle.Large) { HidesWhenStopped = true };
+      _loadingIndicator = new UIActivityIndicatorView(UIActivityIndicatorViewStyle.Large) { HidesWhenStopped = true };
 
-        View.AddSubview(_tableView);
-        View.AddSubview(_loadingIndicator);
-        }
+     _emptyLabel = new UILabel
+ {
+      Text = "No upcoming releases found.\nPull to refresh.",
+ TextColor = UIColor.SecondaryLabel,
+    TextAlignment = UITextAlignment.Center,
+    Lines = 0,
+  Font = UIFont.SystemFontOfSize(16),
+     Hidden = true
+  };
 
-        public override void ViewDidLayoutSubviews()
-        {
+     View.AddSubview(_tableView);
+    View.AddSubview(_loadingIndicator);
+   View.AddSubview(_emptyLabel);
+   }
+
+     public override void ViewDidLayoutSubviews()
+     {
       base.ViewDidLayoutSubviews();
-     var safeArea = View!.SafeAreaInsets;
- _tableView.Frame = new CGRect(0, safeArea.Top, View.Bounds.Width, View.Bounds.Height - safeArea.Top);
-            _loadingIndicator.Center = new CGPoint(View.Bounds.Width / 2, View.Bounds.Height / 2);
-}
+   var safeArea = View!.SafeAreaInsets;
+        _tableView.Frame = new CGRect(0, safeArea.Top, View.Bounds.Width, View.Bounds.Height - safeArea.Top);
+   _loadingIndicator.Center = new CGPoint(View.Bounds.Width / 2, View.Bounds.Height / 2);
+ _emptyLabel.Frame = new CGRect(32, View.Bounds.Height / 2 - 40, View.Bounds.Width - 64, 80);
+      }
 
         private async Task LoadReleases()
-        {
-            _loadingIndicator.StartAnimating();
+   {
+    _loadingIndicator.StartAnimating();
+   _emptyLabel.Hidden = true;
      try
           {
     _releases = await GameApiService.Instance.GetUpcomingReleasesAsync();
            await DatabaseService.Instance.SaveUpcomingReleasesAsync(_releases);
-                _tableView.ReloadData();
-   }
-      catch (Exception ex)
-          {
-     Console.WriteLine($"Error loading releases: {ex.Message}");
-            _releases = await DatabaseService.Instance.GetUpcomingReleasesAsync();
  _tableView.ReloadData();
+  
+      _emptyLabel.Hidden = _releases.Count > 0;
+   }
+  catch (Exception ex)
+   {
+Console.WriteLine($"Error loading releases: {ex.Message}");
+      _releases = await DatabaseService.Instance.GetUpcomingReleasesAsync();
+   _tableView.ReloadData();
+         _emptyLabel.Hidden = _releases.Count > 0;
             }
-         finally
-    {
-       _loadingIndicator.StopAnimating();
-         _refreshControl.EndRefreshing();
-          }
+  finally
+            {
+ _loadingIndicator.StopAnimating();
+  _refreshControl.EndRefreshing();
+     }
    }
 
-      public nint RowsInSection(UITableView tableView, nint section) => _releases.Count;
+        public nint RowsInSection(UITableView tableView, nint section) => _releases.Count;
 
  public UITableViewCell GetCell(UITableView tableView, NSIndexPath indexPath)
-        {
-          var cell = tableView.DequeueReusableCell(ReleaseCell.ReuseId, indexPath) as ReleaseCell;
-            var release = _releases[indexPath.Row];
+   {
+       var cell = tableView.DequeueReusableCell(ReleaseCell.ReuseId, indexPath) as ReleaseCell;
+          var release = _releases[indexPath.Row];
      cell!.Configure(release);
  cell.WishlistToggled += async (s, e) =>
     {
     await DatabaseService.Instance.ToggleWishlistAsync(release);
-        tableView.ReloadRows([indexPath], UITableViewRowAnimation.None);
+    tableView.ReloadRows([indexPath], UITableViewRowAnimation.None);
       };
     return cell;
-        }
+   }
 
     [Export("tableView:didSelectRowAtIndexPath:")]
         public void RowSelected(UITableView tableView, NSIndexPath indexPath)
         {
-            tableView.DeselectRow(indexPath, true);
-        }
+     tableView.DeselectRow(indexPath, true);
+    
+    // Open Steam store page
+  var release = _releases[indexPath.Row];
+    if (!string.IsNullOrEmpty(release.ExternalId))
+ {
+        string url;
+ if (release.Platforms == "Steam")
+       url = $"https://store.steampowered.com/app/{release.ExternalId}";
+      else if (release.Platforms == "Epic Games")
+     url = $"https://store.epicgames.com/en-US/p/{release.ExternalId}";
+      else
+url = $"https://www.google.com/search?q={Uri.EscapeDataString(release.GameName)}+game";
+       
+        UIApplication.SharedApplication.OpenUrl(new NSUrl(url), new UIApplicationOpenUrlOptions(), null);
+     }
+     }
     }
 }
