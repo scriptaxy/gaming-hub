@@ -111,76 +111,78 @@ namespace gaming_hub.Services
    }
 
    /// <summary>
-        /// Search Epic Games Store catalog (no auth required)
-     /// </summary>
-   public async Task<List<Game>> SearchCatalogAsync(string query)
+    /// Search Epic Games Store catalog (no auth required)
+        /// </summary>
+        public async Task<List<Game>> SearchCatalogAsync(string query)
         {
-   var games = new List<Game>();
- try
-            {
-    var graphqlQuery = new
+            var games = new List<Game>();
+      try
    {
-   query = @"
-      query searchStore($searchQuery: String!) {
-          Catalog {
-        searchStore(
-        keywords: $searchQuery
-  count: 20
-      sortBy: ""relevancy""
-      sortDir: ""DESC""
-   ) {
-  elements {
-        id
-  title
-    description
-       keyImages {
-       type
-        url
-               }
-          }
-               }
- }
-                }",
-  variables = new { searchQuery = query }
-         };
+  // Use the Epic Store search API instead of GraphQL
+          var searchUrl = $"https://store-site-backend-static-ipv4.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=US&allowCountries=US";
+        var response = await _httpClient.GetStringAsync(searchUrl);
+   var json = JObject.Parse(response);
+                var elements = json["data"]?["Catalog"]?["searchStore"]?["elements"] as JArray;
 
-          var content = new StringContent(
-     Newtonsoft.Json.JsonConvert.SerializeObject(graphqlQuery),
-           System.Text.Encoding.UTF8,
-       "application/json");
+  var searchLower = query.ToLowerInvariant();
 
-        var response = await _httpClient.PostAsync(EpicGraphqlUrl, content);
-               var responseContent = await response.Content.ReadAsStringAsync();
-      var json = JObject.Parse(responseContent);
-      var elements = json["data"]?["Catalog"]?["searchStore"]?["elements"] as JArray;
-
-       if (elements != null)
+    if (elements != null)
     {
-         foreach (var item in elements)
+     foreach (var item in elements)
   {
-    var keyImages = item["keyImages"] as JArray;
- var imageUrl = keyImages?.FirstOrDefault(i =>
-   i["type"]?.ToString() == "OfferImageWide" ||
-   i["type"]?.ToString() == "Thumbnail")?["url"]?.ToString();
+  var title = item["title"]?.ToString();
+     if (string.IsNullOrEmpty(title)) continue;
 
-       games.Add(new Game
-   {
-   ExternalId = item["id"]?.ToString(),
-Name = item["title"]?.ToString() ?? "Unknown",
+            // Filter by search query
+         if (!title.ToLowerInvariant().Contains(searchLower)) continue;
+
+        var keyImages = item["keyImages"] as JArray;
+       var imageUrl = keyImages?.FirstOrDefault(i =>
+ i["type"]?.ToString() == "OfferImageWide" ||
+   i["type"]?.ToString() == "DieselStoreFrontWide" ||
+        i["type"]?.ToString() == "Thumbnail")?["url"]?.ToString();
+
+        games.Add(new Game
+                    {
+        ExternalId = item["id"]?.ToString(),
+  Name = title,
    Description = item["description"]?.ToString(),
-         CoverImageUrl = imageUrl ?? keyImages?.FirstOrDefault()?["url"]?.ToString(),
-   Platform = GamePlatform.Epic,
-         DateAdded = DateTime.UtcNow
-      });
- }
+       CoverImageUrl = imageUrl ?? keyImages?.FirstOrDefault()?["url"]?.ToString(),
+      Platform = GamePlatform.Epic,
+        DateAdded = DateTime.UtcNow
+       });
+}
           }
- }
- catch (Exception ex)
+
+        // If no results from promotions, try searching CheapShark for Epic games
+             if (games.Count == 0)
+     {
+      var cheapSharkUrl = $"https://www.cheapshark.com/api/1.0/deals?title={Uri.EscapeDataString(query)}&storeID=25&pageSize=20";
+       var csResponse = await _httpClient.GetStringAsync(cheapSharkUrl);
+           var csJson = JArray.Parse(csResponse);
+
+      foreach (var item in csJson)
+          {
+        var title = item["title"]?.ToString();
+   if (string.IsNullOrEmpty(title)) continue;
+
+    games.Add(new Game
             {
- Console.WriteLine($"Error searching Epic catalog: {ex.Message}");
-    }
+          ExternalId = item["gameID"]?.ToString(),
+      Name = title,
+         CoverImageUrl = item["thumb"]?.ToString(),
+    Platform = GamePlatform.Epic,
+  DateAdded = DateTime.UtcNow
+             });
+        }
+             }
+         }
+  catch (Exception ex)
+            {
+          Console.WriteLine($"Error searching Epic catalog: {ex.Message}");
+         }
    return games;
-      }
+     }
 
    public async Task<List<Game>> GetLibraryAsync(string accessToken)
       {
