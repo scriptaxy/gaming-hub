@@ -37,13 +37,19 @@ jobs:
       - name: Install iOS Workload
         run: $DOTNET_ROOT/dotnet workload install ios --skip-sign-check
 
-      - name: Update project to .NET 8
+      - name: Update project to .NET 8 (BEFORE restore)
         run: |
+          echo "=== Before update ==="
+          cat "gaming hub/gaming hub.csproj"
+          echo ""
+          echo "=== Updating to net8.0-ios ==="
           sed -i '' 's/net9.0-ios/net8.0-ios/g' "gaming hub/gaming hub.csproj"
+          echo ""
+          echo "=== After update ==="
           cat "gaming hub/gaming hub.csproj"
 
       - name: Restore NuGet packages
-        run: $DOTNET_ROOT/dotnet restore "gaming hub/gaming hub.csproj"
+        run: $DOTNET_ROOT/dotnet restore "gaming hub/gaming hub.csproj" -r ios-arm64
 
       - name: Build for iOS Device (unsigned)
         run: |
@@ -54,8 +60,7 @@ jobs:
             -p:CodesignKey="-" \
             -p:CodesignProvision="" \
             -p:CodesignEntitlements="" \
-            -p:_RequireCodeSigning=false \
-            --no-restore
+            -p:_RequireCodeSigning=false
 
       - name: Create IPA file
         run: |
@@ -96,11 +101,3 @@ jobs:
           path: GamingHub.ipa
           retention-days: 14
           if-no-files-found: error
-
-      - name: Upload App Bundle (backup)
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-app-bundle
-          path: "gaming hub/bin/Release/net8.0-ios/ios-arm64/"
-          retention-days: 14
-          if-no-files-found: warn
