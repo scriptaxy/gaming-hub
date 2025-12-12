@@ -256,12 +256,13 @@ public async Task<bool> SleepAsync(string host, int port, string? authToken = nu
     {
         public bool IsOnline { get; set; }
         public string Hostname { get; set; } = string.Empty;
+        public string ComputerName => Hostname; // Alias for compatibility
         public double CpuUsage { get; set; }
-        public double MemoryUsage { get; set; }
+      public double MemoryUsage { get; set; }
         public double? GpuUsage { get; set; }
         public double? GpuTemperature { get; set; }
         public string? CurrentGame { get; set; }
-        public bool IsStreaming { get; set; }
+     public bool IsStreaming { get; set; }
         public string? Uptime { get; set; }
     }
 
