@@ -48,13 +48,13 @@ jobs:
       - name: Build for iOS Device (unsigned)
         run: |
           $DOTNET_ROOT/dotnet build "gaming hub/gaming hub.csproj" \
-        -c Release \
-        -f net8.0-ios \
-        -r ios-arm64 \
-                -p:CodesignKey="-" \
-        -p:CodesignProvision="" \
-                -p:CodesignEntitlements="" \
-        -p:_RequireCodeSigning=false \
+            -c Release \
+            -f net8.0-ios \
+            -r ios-arm64 \
+            -p:CodesignKey="-" \
+            -p:CodesignProvision="" \
+            -p:CodesignEntitlements="" \
+            -p:_RequireCodeSigning=false \
             --no-restore
 
       - name: Create IPA file
@@ -74,7 +74,7 @@ jobs:
        
           # Create IPA (just a zip with .ipa extension)
           zip -r "GamingHub.ipa" Payload
-  
+          
           # Verify IPA was created
           ls -la GamingHub.ipa
           
@@ -101,6 +101,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-app-bundle
-          path: gaming hub/bin/Release/net8.0-ios/ios-arm64/**/*.app
+          path: "gaming hub/bin/Release/net8.0-ios/ios-arm64/"
           retention-days: 14
           if-no-files-found: warn
