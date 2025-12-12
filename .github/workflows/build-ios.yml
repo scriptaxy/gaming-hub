@@ -9,34 +9,33 @@ on:
 
 jobs:
   build-ios:
-    runs-on: macos-13
+    runs-on: macos-latest
     env:
       DOTNET_NOLOGO: true
       DOTNET_CLI_TELEMETRY_OPTOUT: true
+      DOTNET_ROOT: /Users/runner/.dotnet-custom
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Remove conflicting .NET versions
+      - name: Clean install .NET 8 SDK
         run: |
-          sudo rm -rf /usr/local/share/dotnet
-          sudo rm -rf ~/.dotnet
-
-      - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
+          # Download and install .NET 8 to custom location
+          curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
+          chmod +x dotnet-install.sh
+          ./dotnet-install.sh --channel 8.0 --install-dir $DOTNET_ROOT
+          echo "$DOTNET_ROOT" >> $GITHUB_PATH
 
       - name: Verify .NET version
         run: |
-          dotnet --version
-          dotnet --list-sdks
+          $DOTNET_ROOT/dotnet --version
+          $DOTNET_ROOT/dotnet --list-sdks
 
       - name: Show Xcode version
         run: xcodebuild -version
 
       - name: Install iOS Workload
-        run: dotnet workload install ios --skip-sign-check
+        run: $DOTNET_ROOT/dotnet workload install ios --skip-sign-check
 
       - name: Update project to .NET 8
         run: |
@@ -44,13 +43,13 @@ jobs:
           cat "gaming hub/gaming hub.csproj"
 
       - name: Restore NuGet packages
-        run: dotnet restore "gaming hub/gaming hub.csproj"
+        run: $DOTNET_ROOT/dotnet restore "gaming hub/gaming hub.csproj"
 
       - name: Build for iOS Simulator
-        run: dotnet build "gaming hub/gaming hub.csproj" -c Debug -f net8.0-ios -r iossimulator-arm64 --no-restore
+        run: $DOTNET_ROOT/dotnet build "gaming hub/gaming hub.csproj" -c Debug -f net8.0-ios -r iossimulator-arm64 --no-restore
 
       - name: Build for iOS Device
-        run: dotnet build "gaming hub/gaming hub.csproj" -c Release -f net8.0-ios -r ios-arm64 --no-restore
+        run: $DOTNET_ROOT/dotnet build "gaming hub/gaming hub.csproj" -c Release -f net8.0-ios -r ios-arm64 --no-restore
         continue-on-error: true
 
       - name: List build outputs
