@@ -40,5 +40,7 @@ public class ApiStatusResponse
     public string? CurrentGame { get; set; }
     public bool IsStreaming { get; set; }
     public int StreamClients { get; set; }
+    public double StreamLatencyMs { get; set; }
+    public int StreamFps { get; set; }
     public string? Uptime { get; set; }
 }

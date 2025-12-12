@@ -8,30 +8,30 @@ namespace SynktraCompanion.Services;
 public class InputSimulator
 {
     private static InputSimulator? _instance;
-public static InputSimulator Instance => _instance ??= new InputSimulator();
+    public static InputSimulator Instance => _instance ??= new InputSimulator();
 
-  // Virtual gamepad state using ViGEm would be ideal, but for simplicity we'll use keyboard mapping
-    private readonly Dictionary<GamepadButtons, ushort> _buttonToKey = new()
+    // Virtual gamepad state using ViGEm would be ideal, but for simplicity we'll use keyboard mapping
+    private readonly Dictionary<GamepadButtons, byte> _buttonToKey = new()
     {
-     { GamepadButtons.A, 0x20 },        // Space
-        { GamepadButtons.B, 0x1B },        // Escape
-  { GamepadButtons.X, 0x45 },        // E
-      { GamepadButtons.Y, 0x52 },        // R
-      { GamepadButtons.LeftBumper, 0x51 },  // Q
-     { GamepadButtons.RightBumper, 0x46 }, // F
+        { GamepadButtons.A, 0x20 },        // Space
+   { GamepadButtons.B, 0x1B },        // Escape
+        { GamepadButtons.X, 0x45 },        // E
+        { GamepadButtons.Y, 0x52 },        // R
+        { GamepadButtons.LeftBumper, 0x51 },  // Q
+        { GamepadButtons.RightBumper, 0x46 }, // F
         { GamepadButtons.Start, 0x0D },    // Enter
         { GamepadButtons.Back, 0x09 },     // Tab
-        { GamepadButtons.DPadUp, 0x26 },   // Up Arrow
-    { GamepadButtons.DPadDown, 0x28 }, // Down Arrow
+   { GamepadButtons.DPadUp, 0x26 },   // Up Arrow
+ { GamepadButtons.DPadDown, 0x28 }, // Down Arrow
         { GamepadButtons.DPadLeft, 0x25 }, // Left Arrow
-        { GamepadButtons.DPadRight, 0x27 } // Right Arrow
+    { GamepadButtons.DPadRight, 0x27 } // Right Arrow
     };
 
-    // Movement keys for analog sticks
-    private const ushort KEY_W = 0x57;
-    private const ushort KEY_A = 0x41;
- private const ushort KEY_S = 0x53;
-    private const ushort KEY_D = 0x44;
+// Movement keys for analog sticks
+    private const byte KEY_W = 0x57;
+    private const byte KEY_A = 0x41;
+    private const byte KEY_S = 0x53;
+    private const byte KEY_D = 0x44;
 
     private GamepadButtons _lastButtons;
     private bool _leftStickUp, _leftStickDown, _leftStickLeft, _leftStickRight;
@@ -56,171 +56,171 @@ public static InputSimulator Instance => _instance ??= new InputSimulator();
 
     public void ProcessCommand(InputCommand cmd)
     {
-        switch (cmd.Type.ToLower())
-        {
+     switch (cmd.Type.ToLower())
+    {
             case "gamepad":
-                ProcessGamepad(cmd);
-    break;
-    case "mouse":
-     ProcessMouse(cmd);
-          break;
-   case "keyboard":
- ProcessKeyboard(cmd);
-       break;
+  ProcessGamepad(cmd);
+                break;
+         case "mouse":
+  ProcessMouse(cmd);
+         break;
+         case "keyboard":
+        ProcessKeyboard(cmd);
+     break;
         }
     }
 
     private void ProcessGamepad(InputCommand cmd)
     {
-      // Process buttons
-        ProcessButtons(cmd.Buttons);
+   // Process buttons
+ProcessButtons(cmd.Buttons);
 
         // Process left stick (WASD)
         ProcessLeftStick(cmd.LeftStickX, cmd.LeftStickY);
 
-        // Process right stick (mouse movement)
+    // Process right stick (mouse movement)
         ProcessRightStick(cmd.RightStickX, cmd.RightStickY);
 
-   // Process triggers
+        // Process triggers
         ProcessTriggers(cmd.LeftTrigger, cmd.RightTrigger);
     }
 
     private void ProcessButtons(GamepadButtons buttons)
     {
         foreach (var mapping in _buttonToKey)
-  {
+        {
             bool wasPressed = (_lastButtons & mapping.Key) != 0;
-      bool isPressed = (buttons & mapping.Key) != 0;
+    bool isPressed = (buttons & mapping.Key) != 0;
 
- if (isPressed && !wasPressed)
-  {
-                // Button pressed
-      keybd_event((byte)mapping.Value, 0, KEYEVENTF_KEYDOWN, UIntPtr.Zero);
-        }
-         else if (!isPressed && wasPressed)
-     {
-        // Button released
-         keybd_event((byte)mapping.Value, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+         if (isPressed && !wasPressed)
+   {
+ // Button pressed
+     keybd_event(mapping.Value, 0, KEYEVENTF_KEYDOWN, UIntPtr.Zero);
             }
-        }
+            else if (!isPressed && wasPressed)
+        {
+       // Button released
+  keybd_event(mapping.Value, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+            }
+}
 
-    _lastButtons = buttons;
+        _lastButtons = buttons;
     }
 
     private void ProcessLeftStick(float x, float y)
     {
-        const float deadzone = 0.2f;
+ const float deadzone = 0.2f;
 
-      // Up/Down (W/S)
-        bool up = y < -deadzone;
+  // Up/Down (W/S)
+      bool up = y < -deadzone;
         bool down = y > deadzone;
 
         if (up != _leftStickUp)
         {
-          keybd_event(KEY_W, 0, up ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
+     keybd_event(KEY_W, 0, up ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
             _leftStickUp = up;
         }
 
         if (down != _leftStickDown)
         {
- keybd_event(KEY_S, 0, down ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
-      _leftStickDown = down;
-        }
+            keybd_event(KEY_S, 0, down ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
+         _leftStickDown = down;
+  }
 
         // Left/Right (A/D)
         bool left = x < -deadzone;
         bool right = x > deadzone;
 
         if (left != _leftStickLeft)
- {
-       keybd_event(KEY_A, 0, left ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
-    _leftStickLeft = left;
+        {
+            keybd_event(KEY_A, 0, left ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
+          _leftStickLeft = left;
         }
 
-        if (right != _leftStickRight)
-        {
- keybd_event(KEY_D, 0, right ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
+    if (right != _leftStickRight)
+      {
+     keybd_event(KEY_D, 0, right ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
             _leftStickRight = right;
         }
     }
 
-    private void ProcessRightStick(float x, float y)
+ private void ProcessRightStick(float x, float y)
     {
         const float deadzone = 0.15f;
-      const int sensitivity = 15;
+        const int sensitivity = 15;
 
-if (Math.Abs(x) > deadzone || Math.Abs(y) > deadzone)
+        if (Math.Abs(x) > deadzone || Math.Abs(y) > deadzone)
         {
-     int dx = (int)(x * sensitivity);
-            int dy = (int)(y * sensitivity);
-      mouse_event(MOUSEEVENTF_MOVE, dx, dy, 0, UIntPtr.Zero);
+       int dx = (int)(x * sensitivity);
+  int dy = (int)(y * sensitivity);
+mouse_event(MOUSEEVENTF_MOVE, dx, dy, 0, UIntPtr.Zero);
         }
-    }
+  }
 
     private bool _leftTriggerDown, _rightTriggerDown;
 
     private void ProcessTriggers(float left, float right)
     {
-        const float threshold = 0.5f;
+    const float threshold = 0.5f;
 
-      // Left trigger = right mouse button (aim)
-        bool leftPressed = left > threshold;
+  // Left trigger = right mouse button (aim)
+  bool leftPressed = left > threshold;
         if (leftPressed != _leftTriggerDown)
         {
-    mouse_event(leftPressed ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP, 0, 0, 0, UIntPtr.Zero);
-            _leftTriggerDown = leftPressed;
+ mouse_event(leftPressed ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP, 0, 0, 0, UIntPtr.Zero);
+ _leftTriggerDown = leftPressed;
         }
 
-        // Right trigger = left mouse button (shoot)
-     bool rightPressed = right > threshold;
+      // Right trigger = left mouse button (shoot)
+  bool rightPressed = right > threshold;
         if (rightPressed != _rightTriggerDown)
         {
-     mouse_event(rightPressed ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
-            _rightTriggerDown = rightPressed;
-      }
+ mouse_event(rightPressed ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+         _rightTriggerDown = rightPressed;
+        }
     }
 
     private void ProcessMouse(InputCommand cmd)
     {
-        // Move mouse to position
+      // Move mouse to position
  SetCursorPos(cmd.MouseX, cmd.MouseY);
 
         // Handle clicks
-        if (cmd.MouseLeft)
-        {
+   if (cmd.MouseLeft)
+    {
             mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
         }
-     if (cmd.MouseRight)
+        if (cmd.MouseRight)
         {
             mouse_event(MOUSEEVENTF_RIGHTDOWN | MOUSEEVENTF_RIGHTUP, 0, 0, 0, UIntPtr.Zero);
-        }
     }
+}
 
     private void ProcessKeyboard(InputCommand cmd)
     {
-  keybd_event((byte)cmd.KeyCode, 0, cmd.KeyDown ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
+        keybd_event((byte)cmd.KeyCode, 0, cmd.KeyDown ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 
     public void ReleaseAllKeys()
     {
      // Release all mapped keys
-    foreach (var key in _buttonToKey.Values)
+      foreach (var key in _buttonToKey.Values)
  {
- keybd_event((byte)key, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+      keybd_event(key, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
         }
 
         // Release WASD
-   keybd_event(KEY_W, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
- keybd_event(KEY_A, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        keybd_event(KEY_W, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+  keybd_event(KEY_A, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
         keybd_event(KEY_S, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-        keybd_event(KEY_D, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+  keybd_event(KEY_D, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
 
         // Release mouse buttons
-     mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
         mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, UIntPtr.Zero);
 
-     _lastButtons = GamepadButtons.None;
+        _lastButtons = GamepadButtons.None;
         _leftStickUp = _leftStickDown = _leftStickLeft = _leftStickRight = false;
-        _leftTriggerDown = _rightTriggerDown = false;
+     _leftTriggerDown = _rightTriggerDown = false;
     }
 }

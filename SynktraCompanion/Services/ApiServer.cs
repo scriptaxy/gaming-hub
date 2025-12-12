@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Net.NetworkInformation;
 using System.Text;
+using System.IO;
 using Newtonsoft.Json;
 using SynktraCompanion.Models;
 
@@ -14,42 +15,43 @@ public class ApiServer
     private CancellationTokenSource? _cts;
     private readonly GameScanner _gameScanner;
     private readonly SystemMonitor _systemMonitor;
-    private readonly ScreenStreamService _screenStream;
+    private readonly LowLatencyStreamService _streamService;
     private List<InstalledGame> _cachedGames = [];
     private DateTime _lastGameScan = DateTime.MinValue;
-    private int _port = 5000;
+  private int _port = 5000;
 
     public const int DiscoveryPort = 5001;
-  public const int StreamPort = 5002;
+    public const int StreamWsPort = 5002;
+    public const int StreamUdpPort = 5003;
     public const string DiscoveryMessage = "SYNKTRA_DISCOVER";
 
- public ApiServer()
+    public ApiServer()
     {
-     _gameScanner = new GameScanner();
-     _systemMonitor = new SystemMonitor();
-        _screenStream = new ScreenStreamService();
+  _gameScanner = new GameScanner();
+        _systemMonitor = new SystemMonitor();
+  _streamService = new LowLatencyStreamService();
     }
 
-  public async Task StartAsync(int port = 5000)
+    public async Task StartAsync(int port = 5000)
     {
         _port = port;
-   _cts = new CancellationTokenSource();
+     _cts = new CancellationTokenSource();
         _listener = new HttpListener();
-    _listener.Prefixes.Add($"http://*:{port}/");
+        _listener.Prefixes.Add($"http://*:{port}/");
 
         try
-        {
-      _listener.Start();
-     Console.WriteLine($"API Server started on port {port}");
+    {
+    _listener.Start();
+        Console.WriteLine($"API Server started on port {port}");
 
-  StartDiscoveryServer();
+            StartDiscoveryServer();
 
- _cachedGames = await _gameScanner.ScanAllGamesAsync();
-     _lastGameScan = DateTime.Now;
+            _cachedGames = await _gameScanner.ScanAllGamesAsync();
+   _lastGameScan = DateTime.Now;
 
-     _ = Task.Run(() => ListenAsync(_cts.Token));
+         _ = Task.Run(() => ListenAsync(_cts.Token));
         }
-    catch (Exception ex)
+        catch (Exception ex)
         {
             Console.WriteLine($"Failed to start API server: {ex.Message}");
      }
@@ -57,41 +59,41 @@ public class ApiServer
 
     private void StartDiscoveryServer()
     {
-  try
+    try
         {
-            _discoveryServer = new UdpClient();
-  _discoveryServer.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-  _discoveryServer.Client.Bind(new IPEndPoint(IPAddress.Any, DiscoveryPort));
-   _discoveryServer.EnableBroadcast = true;
+      _discoveryServer = new UdpClient();
+       _discoveryServer.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            _discoveryServer.Client.Bind(new IPEndPoint(IPAddress.Any, DiscoveryPort));
+         _discoveryServer.EnableBroadcast = true;
 
-      _ = Task.Run(DiscoveryListenAsync);
+  _ = Task.Run(DiscoveryListenAsync);
 
   Console.WriteLine($"Discovery server started on UDP port {DiscoveryPort}");
-   foreach (var ip in GetLocalIPAddresses())
-    {
-         Console.WriteLine($"  Listening on: {ip}:{DiscoveryPort}");
+       foreach (var ip in GetLocalIPAddresses())
+     {
+          Console.WriteLine($"  Listening on: {ip}:{DiscoveryPort}");
             }
         }
-   catch (Exception ex)
+      catch (Exception ex)
         {
-            Console.WriteLine($"Failed to start discovery server: {ex.Message}");
-        }
+    Console.WriteLine($"Failed to start discovery server: {ex.Message}");
+    }
     }
 
     private static List<string> GetLocalIPAddresses()
     {
-     var ips = new List<string>();
+        var ips = new List<string>();
         try
-      {
-            var host = Dns.GetHostEntry(Dns.GetHostName());
-            foreach (var ip in host.AddressList)
-     {
-     if (ip.AddressFamily == AddressFamily.InterNetwork)
         {
-   ips.Add(ip.ToString());
-    }
-            }
+    var host = Dns.GetHostEntry(Dns.GetHostName());
+         foreach (var ip in host.AddressList)
+         {
+        if (ip.AddressFamily == AddressFamily.InterNetwork)
+                {
+       ips.Add(ip.ToString());
+          }
   }
+        }
         catch { }
         return ips;
     }
@@ -102,406 +104,429 @@ public class ApiServer
 
         while (_cts?.IsCancellationRequested == false)
         {
-   try
-          {
-     if (_discoveryServer == null) break;
+try
+            {
+           if (_discoveryServer == null) break;
 
-          using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
-       timeoutCts.CancelAfter(1000);
+     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+   timeoutCts.CancelAfter(1000);
 
-        try
-    {
-  var result = await _discoveryServer.ReceiveAsync(timeoutCts.Token);
-    var message = Encoding.UTF8.GetString(result.Buffer);
-
-   Console.WriteLine($"Received UDP from {result.RemoteEndPoint}: {message}");
-
-          if (message == DiscoveryMessage)
-               {
-        var settings = SettingsManager.Load();
-       var response = new DiscoveryResponse
+         try
                 {
-   Hostname = Environment.MachineName,
-             Port = _port,
-               StreamPort = StreamPort,
-          RequiresAuth = !string.IsNullOrEmpty(settings.AuthToken),
-           Version = "1.0.0",
-  SupportsStreaming = true
-          };
+        var result = await _discoveryServer.ReceiveAsync(timeoutCts.Token);
+  var message = Encoding.UTF8.GetString(result.Buffer);
 
- var responseBytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response));
-          await _discoveryServer.SendAsync(responseBytes, responseBytes.Length, result.RemoteEndPoint);
-              Console.WriteLine($"Discovery response sent to {result.RemoteEndPoint}");
-        }
-      }
-  catch (OperationCanceledException) { }
- }
-            catch (OperationCanceledException) { break; }
-     catch (ObjectDisposedException) { break; }
- catch (Exception ex)
-   {
-        Console.WriteLine($"Discovery error: {ex.Message}");
+       Console.WriteLine($"Received UDP from {result.RemoteEndPoint}: {message}");
+
+         if (message == DiscoveryMessage)
+     {
+        var settings = SettingsManager.Load();
+              var response = new DiscoveryResponse
+  {
+            Hostname = Environment.MachineName,
+ Port = _port,
+         StreamWsPort = StreamWsPort,
+           StreamUdpPort = StreamUdpPort,
+    RequiresAuth = !string.IsNullOrEmpty(settings.AuthToken),
+               Version = "1.0.0",
+      SupportsStreaming = true,
+            SupportsLowLatency = true
+       };
+
+    var responseBytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response));
+         await _discoveryServer.SendAsync(responseBytes, responseBytes.Length, result.RemoteEndPoint);
+         Console.WriteLine($"Discovery response sent to {result.RemoteEndPoint}");
+       }
+     }
+            catch (OperationCanceledException) { }
+            }
+    catch (OperationCanceledException) { break; }
+    catch (ObjectDisposedException) { break; }
+      catch (Exception ex)
+            {
+     Console.WriteLine($"Discovery error: {ex.Message}");
             }
         }
 
-        Console.WriteLine("Discovery listener stopped");
+    Console.WriteLine("Discovery listener stopped");
     }
 
-    public void Stop()
+ public void Stop()
     {
-        try { _cts?.Cancel(); } catch { }
+    try { _cts?.Cancel(); } catch { }
         try { _listener?.Stop(); _listener?.Close(); } catch { }
       try { _discoveryServer?.Close(); _discoveryServer?.Dispose(); } catch { }
-        try { _screenStream.Stop(); } catch { }
+        try { _streamService.Stop(); } catch { }
 
         _listener = null;
-      _discoveryServer = null;
+        _discoveryServer = null;
     }
 
     private async Task ListenAsync(CancellationToken ct)
- {
+    {
         while (!ct.IsCancellationRequested && _listener?.IsListening == true)
         {
-    try
-      {
-           var contextTask = _listener.GetContextAsync();
+ try
+{
+     var contextTask = _listener.GetContextAsync();
                 var completedTask = await Task.WhenAny(contextTask, Task.Delay(500, ct));
 
-     if (completedTask != contextTask || ct.IsCancellationRequested)
-    continue;
+      if (completedTask != contextTask || ct.IsCancellationRequested)
+ continue;
 
-var context = await contextTask;
-     _ = Task.Run(() => HandleRequestAsync(context), ct);
-}
-            catch (OperationCanceledException) { break; }
-   catch (HttpListenerException) { break; }
-      catch { }
-     }
+       var context = await contextTask;
+  _ = Task.Run(() => HandleRequestAsync(context), ct);
+            }
+     catch (OperationCanceledException) { break; }
+            catch (HttpListenerException) { break; }
+            catch { }
+    }
     }
 
     private async Task HandleRequestAsync(HttpListenerContext context)
     {
         var request = context.Request;
-    var response = context.Response;
+        var response = context.Response;
 
-    try
-      {
+        try
+    {
       var settings = SettingsManager.Load();
-  
-       // Skip auth for discover endpoint
-     var path = request.Url?.AbsolutePath.ToLowerInvariant() ?? "/";
-        if (path != "/api/discover" && !string.IsNullOrEmpty(settings.AuthToken))
-       {
-    var authHeader = request.Headers["Authorization"];
-           var providedToken = authHeader?.Replace("Bearer ", "");
-              if (providedToken != settings.AuthToken)
-        {
-     await SendResponse(response, 401, new { error = "Unauthorized" });
-        return;
-  }
-      }
 
-       response.Headers.Add("Access-Control-Allow-Origin", "*");
-            response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  response.Headers.Add("Access-Control-Allow-Headers", "Authorization, Content-Type");
-
-     if (request.HttpMethod == "OPTIONS")
-{
-             response.StatusCode = 204;
-     response.Close();
-         return;
-            }
-
-         var method = request.HttpMethod;
-     object? result = null;
-
-      if (path == "/api/status" && method == "GET")
-{
- result = GetStatus();
-   }
-    else if (path == "/api/games" && method == "GET")
-       {
-                result = await GetGames();
-     }
-   else if (path.StartsWith("/api/games/") && path.EndsWith("/launch") && method == "POST")
- {
-          result = LaunchGame(path);
-     }
-            else if (path == "/api/games/close" && method == "POST")
-     {
-    result = CloseGame();
-      }
-            else if (path == "/api/system/sleep" && method == "POST")
- {
-      result = SystemSleep();
-      }
-            else if (path == "/api/system/shutdown" && method == "POST")
+            var path = request.Url?.AbsolutePath.ToLowerInvariant() ?? "/";
+            if (path != "/api/discover" && !string.IsNullOrEmpty(settings.AuthToken))
             {
-      result = SystemShutdown(request);
+  var authHeader = request.Headers["Authorization"];
+     var providedToken = authHeader?.Replace("Bearer ", "");
+      if (providedToken != settings.AuthToken)
+    {
+          await SendResponse(response, 401, new { error = "Unauthorized" });
+   return;
        }
-     else if (path == "/api/system/restart" && method == "POST")
-       {
-     result = SystemRestart();
-  }
-            else if (path == "/api/discover" && method == "GET")
-       {
-             result = new DiscoveryResponse
-          {
-       Hostname = Environment.MachineName,
-               Port = _port,
-       StreamPort = StreamPort,
-             RequiresAuth = !string.IsNullOrEmpty(settings.AuthToken),
-             Version = "1.0.0",
-  SupportsStreaming = true
-        };
-}
-            else if (path == "/api/stream/start" && method == "POST")
-            {
-         result = await StartStream(request);
-            }
-  else if (path == "/api/stream/stop" && method == "POST")
-     {
-         result = StopStream();
-    }
-            else if (path == "/api/stream/status" && method == "GET")
-            {
-        result = GetStreamStatus();
-            }
-     else if (path == "/api/stream/config" && method == "POST")
-   {
-          result = await SetStreamConfig(request);
             }
 
-            if (result != null)
+            response.Headers.Add("Access-Control-Allow-Origin", "*");
+response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            response.Headers.Add("Access-Control-Allow-Headers", "Authorization, Content-Type");
+
+            if (request.HttpMethod == "OPTIONS")
+       {
+     response.StatusCode = 204;
+    response.Close();
+           return;
+          }
+
+     var method = request.HttpMethod;
+        object? result = null;
+
+    if (path == "/api/status" && method == "GET")
+   {
+        result = GetStatus();
+       }
+            else if (path == "/api/games" && method == "GET")
             {
-  await SendResponse(response, 200, result);
-            }
-            else
-        {
-    await SendResponse(response, 404, new { error = "Not found" });
+           result = await GetGames();
+    }
+          else if (path.StartsWith("/api/games/") && path.EndsWith("/launch") && method == "POST")
+  {
+                result = LaunchGame(path);
   }
+            else if (path == "/api/games/close" && method == "POST")
+   {
+          result = CloseGame();
+  }
+            else if (path == "/api/system/sleep" && method == "POST")
+       {
+    result = SystemSleep();
+        }
+     else if (path == "/api/system/shutdown" && method == "POST")
+ {
+           result = SystemShutdown(request);
+       }
+       else if (path == "/api/system/restart" && method == "POST")
+     {
+    result = SystemRestart();
+  }
+  else if (path == "/api/discover" && method == "GET")
+ {
+          result = new DiscoveryResponse
+         {
+     Hostname = Environment.MachineName,
+     Port = _port,
+       StreamWsPort = StreamWsPort,
+   StreamUdpPort = StreamUdpPort,
+       RequiresAuth = !string.IsNullOrEmpty(settings.AuthToken),
+     Version = "1.0.0",
+ SupportsStreaming = true,
+       SupportsLowLatency = true
+       };
+        }
+ else if (path == "/api/stream/start" && method == "POST")
+      {
+result = await StartStream(request);
+            }
+          else if (path == "/api/stream/stop" && method == "POST")
+     {
+    result = StopStream();
+            }
+            else if (path == "/api/stream/status" && method == "GET")
+        {
+         result = GetStreamStatus();
+ }
+ else if (path == "/api/stream/config" && method == "POST")
+         {
+         result = await SetStreamConfig(request);
+            }
+
+      if (result != null)
+    {
+        await SendResponse(response, 200, result);
      }
+      else
+     {
+         await SendResponse(response, 404, new { error = "Not found" });
+     }
+      }
         catch (Exception ex)
         {
-            try { await SendResponse(response, 500, new { error = ex.Message }); } catch { }
+      try { await SendResponse(response, 500, new { error = ex.Message }); } catch { }
         }
-    }
+  }
 
     private async Task SendResponse(HttpListenerResponse response, int statusCode, object data)
     {
         response.StatusCode = statusCode;
-        response.ContentType = "application/json";
+  response.ContentType = "application/json";
 
         var json = JsonConvert.SerializeObject(data);
-        var buffer = Encoding.UTF8.GetBytes(json);
+    var buffer = Encoding.UTF8.GetBytes(json);
 
         response.ContentLength64 = buffer.Length;
         await response.OutputStream.WriteAsync(buffer);
-        response.Close();
-    }
+     response.Close();
+ }
 
     private ApiStatusResponse GetStatus()
     {
-  var stats = _systemMonitor.GetCurrentStats();
+        var stats = _systemMonitor.GetCurrentStats();
         var currentGame = _systemMonitor.GetRunningGame(_cachedGames);
-var uptime = TimeSpan.FromMilliseconds(Environment.TickCount64);
+  var uptime = TimeSpan.FromMilliseconds(Environment.TickCount64);
 
         return new ApiStatusResponse
-        {
-            Hostname = Environment.MachineName,
-         CpuUsage = stats.CpuUsage,
-     MemoryUsage = stats.MemoryUsage,
-        GpuUsage = stats.GpuUsage,
-   GpuTemp = stats.GpuTemperature,
-     CurrentGame = currentGame,
-     IsStreaming = _screenStream.IsStreaming,
-  StreamClients = _screenStream.ClientCount,
-  Uptime = $"{uptime.Days}d {uptime.Hours}h {uptime.Minutes}m"
-    };
+  {
+     Hostname = Environment.MachineName,
+   CpuUsage = stats.CpuUsage,
+            MemoryUsage = stats.MemoryUsage,
+   GpuUsage = stats.GpuUsage,
+            GpuTemp = stats.GpuTemperature,
+        CurrentGame = currentGame,
+    IsStreaming = _streamService.IsStreaming,
+   StreamClients = _streamService.ClientCount,
+          StreamLatencyMs = _streamService.TotalLatency,
+            StreamFps = _streamService.CurrentFps,
+            Uptime = $"{uptime.Days}d {uptime.Hours}h {uptime.Minutes}m"
+        };
     }
 
     private async Task<List<InstalledGame>> GetGames()
     {
-        if ((DateTime.Now - _lastGameScan).TotalMinutes > 5)
-        {
-   _cachedGames = await _gameScanner.ScanAllGamesAsync();
-        _lastGameScan = DateTime.Now;
+  if ((DateTime.Now - _lastGameScan).TotalMinutes > 5)
+      {
+      _cachedGames = await _gameScanner.ScanAllGamesAsync();
+   _lastGameScan = DateTime.Now;
         }
         return _cachedGames;
     }
 
     private object LaunchGame(string path)
- {
+    {
         var parts = path.Split('/');
-      if (parts.Length < 4) return new { success = false, error = "Invalid game ID" };
+        if (parts.Length < 4) return new { success = false, error = "Invalid game ID" };
 
-   var gameId = parts[3];
+        var gameId = parts[3];
         var game = _cachedGames.FirstOrDefault(g => g.Id == gameId);
 
-      if (game == null)
-            return new { success = false, error = "Game not found" };
+  if (game == null)
+         return new { success = false, error = "Game not found" };
 
-        try
-      {
-   if (!string.IsNullOrEmpty(game.LaunchCommand))
-     {
-   System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-      {
-     FileName = game.LaunchCommand,
-      UseShellExecute = true
-   });
-    return new { success = true };
- }
-    return new { success = false, error = "No launch command" };
-  }
-        catch (Exception ex)
-        {
-         return new { success = false, error = ex.Message };
-        }
-    }
-
-    private object CloseGame()
+  try
     {
-      var currentGame = _systemMonitor.GetRunningGame(_cachedGames);
-        if (currentGame == null)
-       return new { success = false, error = "No game running" };
-
- return new { success = true, message = "Please close the game manually" };
-    }
-
-    private object SystemSleep()
-    {
-        try
-        {
-System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
- {
-      FileName = "rundll32.exe",
-     Arguments = "powrprof.dll,SetSuspendState 0,1,0",
-     UseShellExecute = false
-       });
-     return new { success = true };
-        }
-        catch (Exception ex)
-      {
-      return new { success = false, error = ex.Message };
-        }
+       if (!string.IsNullOrEmpty(game.LaunchCommand))
+            {
+       System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+  {
+             FileName = game.LaunchCommand,
+         UseShellExecute = true
+      });
+      return new { success = true };
+          }
+   return new { success = false, error = "No launch command" };
 }
+        catch (Exception ex)
+     {
+  return new { success = false, error = ex.Message };
+        }
+    }
 
-    private object SystemShutdown(HttpListenerRequest request)
+  private object CloseGame()
     {
-        var queryDelay = request.QueryString["delay"];
-   var delay = int.TryParse(queryDelay, out var d) ? d : 0;
+   var currentGame = _systemMonitor.GetRunningGame(_cachedGames);
+        if (currentGame == null)
+  return new { success = false, error = "No game running" };
 
+        return new { success = true, message = "Please close the game manually" };
+    }
+
+  private object SystemSleep()
+    {
         try
         {
-     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-          {
-     FileName = "shutdown",
-      Arguments = $"/s /t {delay}",
-        UseShellExecute = false
-            });
+      System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+    {
+            FileName = "rundll32.exe",
+     Arguments = "powrprof.dll,SetSuspendState 0,1,0",
+                UseShellExecute = false
+          });
             return new { success = true };
         }
         catch (Exception ex)
         {
             return new { success = false, error = ex.Message };
         }
+  }
+
+    private object SystemShutdown(HttpListenerRequest request)
+    {
+        var queryDelay = request.QueryString["delay"];
+      var delay = int.TryParse(queryDelay, out var d) ? d : 0;
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+          {
+       FileName = "shutdown",
+       Arguments = $"/s /t {delay}",
+       UseShellExecute = false
+            });
+            return new { success = true };
+        }
+    catch (Exception ex)
+        {
+      return new { success = false, error = ex.Message };
+        }
     }
 
     private object SystemRestart()
     {
-   try
-        {
+        try
+ {
    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-        {
-   FileName = "shutdown",
-                Arguments = "/r /t 0",
-                UseShellExecute = false
-          });
-  return new { success = true };
+            {
+             FileName = "shutdown",
+   Arguments = "/r /t 0",
+              UseShellExecute = false
+            });
+            return new { success = true };
+   }
+        catch (Exception ex)
+  {
+          return new { success = false, error = ex.Message };
         }
-   catch (Exception ex)
-   {
-   return new { success = false, error = ex.Message };
     }
- }
 
     private async Task<object> StartStream(HttpListenerRequest request)
     {
         try
-   {
-            if (_screenStream.IsStreaming)
-         {
-  return new { success = true, message = "Already streaming", port = StreamPort };
+        {
+            if (_streamService.IsStreaming)
+  {
+          return new { 
+          success = true, 
+    message = "Already streaming", 
+      wsPort = StreamWsPort,
+       udpPort = StreamUdpPort
+     };
+        }
+
+        // Read config from request body if provided
+      if (request.HasEntityBody)
+            {
+       using var reader = new StreamReader(request.InputStream);
+    var body = await reader.ReadToEndAsync();
+      var config = JsonConvert.DeserializeAnonymousType(body, new { quality = 40, fps = 60, width = 1280, height = 720 });
+       if (config != null)
+  {
+    _streamService.SetQuality(config.quality);
+                  _streamService.SetTargetFps(config.fps);
+  _streamService.SetResolution(config.width, config.height);
+ }
             }
 
-       // Read config from request body if provided
-        if (request.HasEntityBody)
-       {
-        using var reader = new StreamReader(request.InputStream);
-             var body = await reader.ReadToEndAsync();
-        var config = JsonConvert.DeserializeAnonymousType(body, new { quality = 50, fps = 30, width = 1280, height = 720 });
-        if (config != null)
-        {
-         _screenStream.SetQuality(config.quality);
-          _screenStream.SetTargetFps(config.fps);
-       _screenStream.SetResolution(config.width, config.height);
-    }
-     }
-
-      await _screenStream.StartAsync(StreamPort);
-      return new { success = true, port = StreamPort, message = "Streaming started" };
+            await _streamService.StartAsync(StreamWsPort, StreamUdpPort);
+        return new { 
+   success = true, 
+      wsPort = StreamWsPort, 
+         udpPort = StreamUdpPort,
+      message = "Low-latency streaming started" 
+            };
         }
         catch (Exception ex)
-        {
-         return new { success = false, error = ex.Message };
+   {
+            return new { success = false, error = ex.Message };
         }
     }
 
     private object StopStream()
     {
-   try
+        try
         {
-            _screenStream.Stop();
-  InputSimulator.Instance.ReleaseAllKeys();
-            return new { success = true, message = "Streaming stopped" };
-        }
-        catch (Exception ex)
+     _streamService.Stop();
+            InputSimulator.Instance.ReleaseAllKeys();
+   return new { success = true, message = "Streaming stopped" };
+    }
+   catch (Exception ex)
         {
-     return new { success = false, error = ex.Message };
-  }
+ return new { success = false, error = ex.Message };
+     }
     }
 
-    private object GetStreamStatus()
+  private object GetStreamStatus()
     {
         return new
-        {
-    isStreaming = _screenStream.IsStreaming,
-  clientCount = _screenStream.ClientCount,
-   port = StreamPort
-        };
+{
+     isStreaming = _streamService.IsStreaming,
+     clientCount = _streamService.ClientCount,
+       wsPort = StreamWsPort,
+         udpPort = StreamUdpPort,
+latency = new
+      {
+     captureMs = _streamService.CaptureLatency,
+                encodeMs = _streamService.EncodeLatency,
+              totalMs = _streamService.TotalLatency
+            },
+    fps = _streamService.CurrentFps
+   };
     }
 
     private async Task<object> SetStreamConfig(HttpListenerRequest request)
     {
-        try
+ try
         {
             using var reader = new StreamReader(request.InputStream);
- var body = await reader.ReadToEndAsync();
-        var config = JsonConvert.DeserializeAnonymousType(body, new { quality = 50, fps = 30, width = 1280, height = 720 });
+            var body = await reader.ReadToEndAsync();
+     var config = JsonConvert.DeserializeAnonymousType(body, new { quality = 40, fps = 60, width = 1280, height = 720 });
 
-     if (config != null)
-            {
-      _screenStream.SetQuality(config.quality);
-           _screenStream.SetTargetFps(config.fps);
- _screenStream.SetResolution(config.width, config.height);
+            if (config != null)
+ {
+    _streamService.SetQuality(config.quality);
+ _streamService.SetTargetFps(config.fps);
+  _streamService.SetResolution(config.width, config.height);
         }
 
-      return new { success = true };
-    }
+          return new { success = true };
+ }
         catch (Exception ex)
-     {
-       return new { success = false, error = ex.Message };
+        {
+   return new { success = false, error = ex.Message };
       }
     }
 }
@@ -510,8 +535,10 @@ public class DiscoveryResponse
 {
     public string Hostname { get; set; } = string.Empty;
     public int Port { get; set; }
-    public int StreamPort { get; set; } = 5002;
+    public int StreamWsPort { get; set; } = 5002;
+    public int StreamUdpPort { get; set; } = 5003;
     public bool RequiresAuth { get; set; }
     public string Version { get; set; } = "1.0.0";
-    public bool SupportsStreaming { get; set; }
+ public bool SupportsStreaming { get; set; }
+    public bool SupportsLowLatency { get; set; }
 }
