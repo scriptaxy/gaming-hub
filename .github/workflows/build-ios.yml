@@ -45,32 +45,62 @@ jobs:
       - name: Restore NuGet packages
         run: $DOTNET_ROOT/dotnet restore "gaming hub/gaming hub.csproj"
 
-      - name: Build for iOS Simulator
-        run: $DOTNET_ROOT/dotnet build "gaming hub/gaming hub.csproj" -c Debug -f net8.0-ios -r iossimulator-arm64 --no-restore
+      - name: Build for iOS Device (unsigned)
+        run: |
+          $DOTNET_ROOT/dotnet build "gaming hub/gaming hub.csproj" \
+        -c Release \
+        -f net8.0-ios \
+        -r ios-arm64 \
+                -p:CodesignKey="-" \
+        -p:CodesignProvision="" \
+                -p:CodesignEntitlements="" \
+        -p:_RequireCodeSigning=false \
+            --no-restore
 
-      - name: Build for iOS Device
-        run: $DOTNET_ROOT/dotnet build "gaming hub/gaming hub.csproj" -c Release -f net8.0-ios -r ios-arm64 --no-restore
-        continue-on-error: true
+      - name: Create IPA file
+        run: |
+          APP_PATH=$(find "gaming hub/bin/Release" -name "*.app" -type d | head -1)
+          echo "Found app at: $APP_PATH"
+    
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found, listing directory:"
+            find "gaming hub/bin" -type d -name "*.app"
+            exit 1
+          fi
+          
+          # Create Payload directory structure
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+       
+          # Create IPA (just a zip with .ipa extension)
+          zip -r "GamingHub.ipa" Payload
+  
+          # Verify IPA was created
+          ls -la GamingHub.ipa
+          
+          # Clean up
+          rm -rf Payload
 
       - name: List build outputs
         run: |
-          echo "=== Simulator Build ==="
-          find "gaming hub/bin/Debug" -name "*.app" 2>/dev/null || echo "No simulator app found"
-          echo "=== Release Build ==="
-          find "gaming hub/bin/Release" -name "*.app" 2>/dev/null || echo "No release build found"
+          echo "=== IPA File ==="
+          ls -la *.ipa 2>/dev/null || echo "No IPA found"
+          echo ""
+          echo "=== App Bundles ==="
+          find "gaming hub/bin" -name "*.app" -type d 2>/dev/null || echo "No .app found"
 
-      - name: Upload Simulator Build
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ios-simulator-build
-          path: gaming hub/bin/Debug/net8.0-ios/iossimulator-arm64/
+          name: GamingHub-iOS
+          path: GamingHub.ipa
           retention-days: 14
-          if-no-files-found: warn
+          if-no-files-found: error
 
-      - name: Upload Release Build
+      - name: Upload App Bundle (backup)
         uses: actions/upload-artifact@v4
         with:
-          name: ios-device-build
-          path: gaming hub/bin/Release/net8.0-ios/ios-arm64/
+          name: ios-app-bundle
+          path: gaming hub/bin/Release/net8.0-ios/ios-arm64/**/*.app
           retention-days: 14
           if-no-files-found: warn
