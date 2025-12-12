@@ -40,11 +40,10 @@ public partial class MainWindow : Window
         UpdateNetworkInfo();
         _updateTimer.Start();
 
-        // Start API server
         var settings = SettingsManager.Load();
         await _apiServer.StartAsync(settings.Port);
 
-        await Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             var games = await _gameScanner.ScanAllGamesAsync();
             Dispatcher.Invoke(() =>
@@ -58,8 +57,9 @@ public partial class MainWindow : Window
 
     private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        _apiServer.Stop();
         _updateTimer.Stop();
+        _apiServer.Stop();
+        Application.Current.Shutdown();
     }
 
     private void MinBtn_Click(object sender, RoutedEventArgs e)
