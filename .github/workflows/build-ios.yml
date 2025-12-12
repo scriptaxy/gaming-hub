@@ -5,151 +5,88 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch:  # Allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   build-ios:
-    runs-on: macos-14  # Latest macOS with Xcode 15
-    
+    runs-on: macos-14
     steps:
-    - name: Checkout code
-  uses: actions/checkout@v4
-    
-    - name: Setup .NET 9
-      uses: actions/setup-dotnet@v4
-      with:
-      dotnet-version: '9.0.x'
-    
-    - name: Install iOS Workload
-      run: dotnet workload install ios
-    
-    - name: Restore NuGet packages
-      run: dotnet restore "gaming hub/gaming hub.csproj"
-    
-    - name: Build for iOS Simulator (Debug)
-      run: |
- dotnet build "gaming hub/gaming hub.csproj" \
-   -c Debug \
-      -f net9.0-ios \
-    -r iossimulator-arm64 \
-  --no-restore
-    
-    - name: Build for iOS Device (Release)
-      run: |
-        dotnet build "gaming hub/gaming hub.csproj" \
-          -c Release \
-    -f net9.0-ios \
-          -r ios-arm64 \
-       -p:UseInterpreter=true \
-          --no-restore
-      continue-on-error: true  # May fail without signing
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Create unsigned IPA (for sideloading)
-      run: |
-        dotnet publish "gaming hub/gaming hub.csproj" \
-          -c Release \
--f net9.0-ios \
-        -r ios-arm64 \
-          -p:ArchiveOnBuild=false \
-     -p:BuildIpa=true \
-     -p:CodesignKey="-" \
-  -p:CodesignProvision="" \
-      -o ./publish
-      continue-on-error: true
-    
-    - name: List build outputs
-  run: |
-        echo "=== Simulator Build ==="
-        find "gaming hub/bin/Debug" -name "*.app" 2>/dev/null || echo "No simulator app found"
-   echo ""
-        echo "=== Release Build ==="
- find "gaming hub/bin/Release" -name "*.app" -o -name "*.ipa" 2>/dev/null || echo "No release build found"
-        echo ""
-  echo "=== Publish Output ==="
-        ls -la ./publish 2>/dev/null || echo "No publish output"
-    
-    - name: Upload Simulator Build
-      uses: actions/upload-artifact@v4
-      with:
-        name: ios-simulator-build
-        path: |
-          gaming hub/bin/Debug/net9.0-ios/iossimulator-arm64/
-   retention-days: 14
-        if-no-files-found: warn
-    
-  - name: Upload Release Build
-      uses: actions/upload-artifact@v4
-      with:
-        name: ios-release-build
-        path: |
-          gaming hub/bin/Release/net9.0-ios/ios-arm64/
-       ./publish/
-        retention-days: 14
-        if-no-files-found: warn
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
 
-  # Separate job for signed IPA (requires secrets)
-  build-signed-ipa:
+      - name: Install iOS Workload
+        run: dotnet workload install ios
+
+      - name: Restore NuGet packages
+        run: dotnet restore "gaming hub/gaming hub.csproj"
+
+      - name: Build for iOS Simulator
+        run: dotnet build "gaming hub/gaming hub.csproj" -c Debug -f net9.0-ios -r iossimulator-arm64 --no-restore
+
+      - name: Build for iOS Device
+        run: dotnet build "gaming hub/gaming hub.csproj" -c Release -f net9.0-ios -r ios-arm64 --no-restore
+        continue-on-error: true
+
+      - name: Create unsigned IPA (for sideloading)
+        run: |
+          dotnet publish "gaming hub/gaming hub.csproj" \
+            -c Release \
+            -f net9.0-ios \
+            -r ios-arm64 \
+            -p:ArchiveOnBuild=false \
+            -p:BuildIpa=true \
+            -p:CodesignKey="-" \
+            -p:CodesignProvision="" \
+            -o ./publish
+        continue-on-error: true
+   
+      - name: List build outputs
+        run: |
+          echo "=== Simulator Build ==="
+          find "gaming hub/bin/Debug" -name "*.app" 2>/dev/null || echo "No simulator app found"
+          echo ""
+          echo "=== Release Build ==="
+          find "gaming hub/bin/Release" -name "*.app" -o -name "*.ipa" 2>/dev/null || echo "No release build found"
+          echo ""
+          echo "=== Publish Output ==="
+          ls -la ./publish 2>/dev/null || echo "No publish output"
+      
+      - name: Upload Simulator Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-build
+          path: gaming hub/bin/Debug/net9.0-ios/iossimulator-arm64/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload Release Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-device-build
+          path: gaming hub/bin/Release/net9.0-ios/ios-arm64/
+          retention-days: 14
+          if-no-files-found: warn
+
+  build-info:
     runs-on: macos-14
     needs: build-ios
-    if: github.event_name != 'pull_request'  # Only on push/manual
+    if: github.event_name != 'pull_request'
     
     steps:
- - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup .NET 9
-      uses: actions/setup-dotnet@v4
-      with:
-      dotnet-version: '9.0.x'
-    
-    - name: Install iOS Workload
-      run: dotnet workload install ios
-    
-    # Uncomment and configure these when you have Apple Developer account
-    # - name: Import Code Signing Certificate
-    #   env:
-  #     CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-    #     CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-    #     KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-    #   run: |
-    #     CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
-    #     KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-    #     
-    #     echo -n "$CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-    #   
-    #     security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-    #     security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-    #     security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-    #     
-    #     security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-    #     security list-keychain -d user -s $KEYCHAIN_PATH
-    #
-    # - name: Import Provisioning Profile
-    #   env:
-  #     PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
-    #   run: |
-    #     PP_PATH=$RUNNER_TEMP/profile.mobileprovision
-    #     echo -n "$PROVISIONING_PROFILE_BASE64" | base64 --decode -o $PP_PATH
-    #     mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-#     cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
-    
-    - name: Build Info
-      run: |
-        echo "============================================"
-        echo "  ?? Gaming Hub iOS Build"
-        echo "============================================"
-        echo ""
-        echo "To create a signed IPA, you need:"
-        echo "1. Apple Developer Account ($99/year)"
-     echo "2. Add these GitHub Secrets:"
-   echo "   - APPLE_CERTIFICATE_BASE64"
-   echo "   - APPLE_CERTIFICATE_PASSWORD"
-      echo "   - APPLE_PROVISIONING_PROFILE_BASE64"
-    echo "   - KEYCHAIN_PASSWORD"
-     echo ""
-        echo "For FREE sideloading with AltStore/Sideloadly:"
-      echo "1. Download the simulator build artifact"
-     echo "2. Use a Mac to re-sign, OR"
-      echo "3. Use iOS App Signer on a Mac"
-        echo ""
-      echo "============================================"
+      - name: Build Info
+        run: |
+          echo "============================================"
+          echo "  Gaming Hub iOS Build Complete"
+          echo "============================================"
+          echo ""
+          echo "To install on iPhone:"
+          echo "1. Download artifacts from this workflow"
+          echo "2. Use Sideloadly or AltStore"
+          echo "3. Sign with your Apple ID"
+          echo ""
+          echo "============================================"
