@@ -35,9 +35,10 @@ public class ApiStatusResponse
     public string Hostname { get; set; } = Environment.MachineName;
     public double CpuUsage { get; set; }
     public double MemoryUsage { get; set; }
- public double? GpuUsage { get; set; }
+    public double? GpuUsage { get; set; }
     public double? GpuTemp { get; set; }
     public string? CurrentGame { get; set; }
     public bool IsStreaming { get; set; }
+    public int StreamClients { get; set; }
     public string? Uptime { get; set; }
 }

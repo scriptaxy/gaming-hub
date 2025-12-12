@@ -374,6 +374,9 @@ _descriptionLabel.TextColor = UIColor.SystemGreen;
       private UIButton _sleepButton = null!;
       private UIButton _restartButton = null!;
         private UIButton _shutdownButton = null!;
+  
+        private bool _isOnline;
+        public bool IsOnline => _isOnline;
 
         public event EventHandler? WakeRequested;
         public event EventHandler? SleepRequested;
@@ -506,11 +509,13 @@ BackgroundColor = UIColor.SecondarySystemBackground;
 
   public void UpdateStatus(RemotePCStatus status)
         {
+       _isOnline = status.IsOnline;
+     
        if (status.IsOnline)
          {
           _statusIndicator.BackgroundColor = UIColor.SystemGreen;
     _statusLabel.Text = "Online";
-                _hostnameLabel.Text = status.Hostname;
+_hostnameLabel.Text = status.Hostname;
     _cpuLabel.Text = $"CPU {status.CpuUsage:0}%";
           _cpuProgress.Progress = (float)(status.CpuUsage / 100);
            _memoryLabel.Text = $"RAM {status.MemoryUsage:0}%";
