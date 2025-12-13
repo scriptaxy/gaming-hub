@@ -704,7 +704,7 @@ private void HapticFeedback()
 
   private void SetupControls()
     {
-            var scale = _size == ControllerSize.Minimal ? 0.7f : 1.0f;
+       var scale = _size == ControllerSize.Minimal ? 0.7f : 1.0f;
   var opacity = _size == ControllerSize.Minimal ? 0.5f : 0.7f;
 
  // Left analog stick
@@ -725,13 +725,13 @@ private void HapticFeedback()
      _state.RightStickX = x;
        _state.RightStickY = y;
    NotifyStateChanged();
-          };
-            _rightStick.OnPressed += pressed => SetButton(GamepadButtons.RightStick, pressed);
+     };
+       _rightStick.OnPressed += pressed => SetButton(GamepadButtons.RightStick, pressed);
             AddSubview(_rightStick);
 
-            // D-Pad
+  // D-Pad
             _dpad = new ModernDPad(scale, opacity);
-            _dpad.OnDirectionChanged += dir =>
+      _dpad.OnDirectionChanged += dir =>
  {
                 _state.Buttons &= ~(GamepadButtons.DPadUp | GamepadButtons.DPadDown | GamepadButtons.DPadLeft | GamepadButtons.DPadRight);
           _state.Buttons |= dir;
@@ -741,39 +741,41 @@ private void HapticFeedback()
 
             // Face buttons
     _faceButtons = new ModernFaceButtons(_style, scale, opacity);
-            _faceButtons.OnButtonChanged += (button, pressed) => SetButton(button, pressed);
+          _faceButtons.OnButtonChanged += (button, pressed) => SetButton(button, pressed);
  AddSubview(_faceButtons);
 
       // Shoulder buttons
-            _leftBumper = new ModernShoulderButton(_style == ControllerStyle.Xbox ? "LB" : "L1", scale, opacity);
+   _leftBumper = new ModernShoulderButton(_style == ControllerStyle.Xbox ? "LB" : "L1", scale, opacity);
      _leftBumper.OnPressed += pressed => SetButton(GamepadButtons.LeftBumper, pressed);
-            AddSubview(_leftBumper);
+     AddSubview(_leftBumper);
 
-          _rightBumper = new ModernShoulderButton(_style == ControllerStyle.Xbox ? "RB" : "R1", scale, opacity);
-       _rightBumper.OnPressed += pressed => SetButton(GamepadButtons.RightBumper, pressed);
-            AddSubview(_rightBumper);
+      _rightBumper = new ModernShoulderButton(_style == ControllerStyle.Xbox ? "RB" : "R1", scale, opacity);
+ _rightBumper.OnPressed += pressed => SetButton(GamepadButtons.RightBumper, pressed);
+          AddSubview(_rightBumper);
 
-            // Triggers
+// Triggers
       _leftTrigger = new ModernTrigger(_style == ControllerStyle.Xbox ? "LT" : "L2", scale, opacity);
             _leftTrigger.OnValueChanged += v => { _state.LeftTrigger = v; NotifyStateChanged(); };
       AddSubview(_leftTrigger);
 
     _rightTrigger = new ModernTrigger(_style == ControllerStyle.Xbox ? "RT" : "R2", scale, opacity);
       _rightTrigger.OnValueChanged += v => { _state.RightTrigger = v; NotifyStateChanged(); };
-            AddSubview(_rightTrigger);
+          AddSubview(_rightTrigger);
 
-        // Menu buttons
-      var menuIcon = _style == ControllerStyle.Xbox ? "?" : "?";
-   var optionsIcon = _style == ControllerStyle.Xbox ? "?" : "OPTIONS";
+        // Menu buttons using SF Symbols
+            // Xbox: line.3.horizontal (menu), ellipsis (options)
+      // PlayStation: line.3.horizontal (options), rectangle.grid.1x2 (share/create)
+            var menuSymbol = _style == ControllerStyle.Xbox ? "line.3.horizontal" : "square.and.arrow.up";
+var optionsSymbol = _style == ControllerStyle.Xbox ? "ellipsis" : "line.3.horizontal";
 
-            _menuButton = new ModernMenuButton(menuIcon, scale, opacity);
-      _menuButton.OnPressed += pressed => SetButton(GamepadButtons.Back, pressed);
-  AddSubview(_menuButton);
+            _menuButton = new ModernMenuButton(menuSymbol, scale, opacity);
+    _menuButton.OnPressed += pressed => SetButton(GamepadButtons.Back, pressed);
+     AddSubview(_menuButton);
 
-    _optionsButton = new ModernMenuButton(optionsIcon, scale, opacity);
-      _optionsButton.OnPressed += pressed => SetButton(GamepadButtons.Start, pressed);
-       AddSubview(_optionsButton);
-        }
+            _optionsButton = new ModernMenuButton(optionsSymbol, scale, opacity);
+       _optionsButton.OnPressed += pressed => SetButton(GamepadButtons.Start, pressed);
+        AddSubview(_optionsButton);
+  }
 
         public override void LayoutSubviews()
         {
@@ -1075,307 +1077,331 @@ var arrowSize = 8 * _scale;
    private readonly float _scale;
         private readonly float _opacity;
 
-    private ModernFaceButton _bottomButton = null!;
+        private ModernFaceButton _bottomButton = null!;
         private ModernFaceButton _rightButton = null!;
         private ModernFaceButton _leftButton = null!;
         private ModernFaceButton _topButton = null!;
 
- public event Action<GamepadButtons, bool>? OnButtonChanged;
+        public event Action<GamepadButtons, bool>? OnButtonChanged;
 
         public ModernFaceButtons(ControllerStyle style, float scale, float opacity)
         {
-       _style = style;
-    _scale = scale;
-   _opacity = opacity;
+            _style = style;
+ _scale = scale;
+      _opacity = opacity;
             SetupButtons();
-  }
+     }
 
-        private void SetupButtons()
+      private void SetupButtons()
         {
- var buttonSize = 44 * _scale;
+var buttonSize = 44 * _scale;
 
-            if (_style == ControllerStyle.Xbox)
-            {
-          _bottomButton = new ModernFaceButton("A", UIColor.FromRGB(80, 180, 80), buttonSize, _opacity);
-        _rightButton = new ModernFaceButton("B", UIColor.FromRGB(220, 80, 80), buttonSize, _opacity);
-        _leftButton = new ModernFaceButton("X", UIColor.FromRGB(80, 140, 220), buttonSize, _opacity);
-    _topButton = new ModernFaceButton("Y", UIColor.FromRGB(220, 180, 60), buttonSize, _opacity);
-            }
-   else
+  if (_style == ControllerStyle.Xbox)
      {
-    _bottomButton = new ModernFaceButton("?", UIColor.FromRGB(100, 150, 200), buttonSize, _opacity);
-      _rightButton = new ModernFaceButton("?", UIColor.FromRGB(220, 100, 100), buttonSize, _opacity);
-_leftButton = new ModernFaceButton("?", UIColor.FromRGB(200, 120, 180), buttonSize, _opacity);
-      _topButton = new ModernFaceButton("?", UIColor.FromRGB(100, 200, 180), buttonSize, _opacity);
-      }
+         _bottomButton = new ModernFaceButton("A", null, UIColor.FromRGB(80, 180, 80), buttonSize, _opacity);
+    _rightButton = new ModernFaceButton("B", null, UIColor.FromRGB(220, 80, 80), buttonSize, _opacity);
+_leftButton = new ModernFaceButton("X", null, UIColor.FromRGB(80, 140, 220), buttonSize, _opacity);
+      _topButton = new ModernFaceButton("Y", null, UIColor.FromRGB(220, 180, 60), buttonSize, _opacity);
+    }
+      else
+    {
+      // Use SF Symbols for PlayStation-style buttons
+          _bottomButton = new ModernFaceButton(null, "xmark", UIColor.FromRGB(100, 150, 200), buttonSize, _opacity);
+         _rightButton = new ModernFaceButton(null, "circle", UIColor.FromRGB(220, 100, 100), buttonSize, _opacity);
+                _leftButton = new ModernFaceButton(null, "square", UIColor.FromRGB(200, 120, 180), buttonSize, _opacity);
+                _topButton = new ModernFaceButton(null, "triangle", UIColor.FromRGB(100, 200, 180), buttonSize, _opacity);
+         }
 
-    _bottomButton.OnPressed += p => OnButtonChanged?.Invoke(GamepadButtons.A, p);
-            _rightButton.OnPressed += p => OnButtonChanged?.Invoke(GamepadButtons.B, p);
-     _leftButton.OnPressed += p => OnButtonChanged?.Invoke(GamepadButtons.X, p);
-            _topButton.OnPressed += p => OnButtonChanged?.Invoke(GamepadButtons.Y, p);
+   _bottomButton.OnPressed += p => OnButtonChanged?.Invoke(GamepadButtons.A, p);
+    _rightButton.OnPressed += p => OnButtonChanged?.Invoke(GamepadButtons.B, p);
+            _leftButton.OnPressed += p => OnButtonChanged?.Invoke(GamepadButtons.X, p);
+   _topButton.OnPressed += p => OnButtonChanged?.Invoke(GamepadButtons.Y, p);
 
-   AddSubview(_bottomButton);
-          AddSubview(_rightButton);
-            AddSubview(_leftButton);
-    AddSubview(_topButton);
+         AddSubview(_bottomButton);
+            AddSubview(_rightButton);
+      AddSubview(_leftButton);
+        AddSubview(_topButton);
         }
 
         public override void LayoutSubviews()
         {
-        base.LayoutSubviews();
+            base.LayoutSubviews();
 
-            var size = Bounds.Width;
+          var size = Bounds.Width;
     var buttonSize = _bottomButton.Frame.Width;
- var center = size / 2;
-    var offset = size * 0.28f;
+       var center = size / 2;
+        var offset = size * 0.28f;
 
-            _bottomButton.Center = new CGPoint(center, center + offset);
-        _rightButton.Center = new CGPoint(center + offset, center);
-            _leftButton.Center = new CGPoint(center - offset, center);
- _topButton.Center = new CGPoint(center, center - offset);
+     _bottomButton.Center = new CGPoint(center, center + offset);
+            _rightButton.Center = new CGPoint(center + offset, center);
+   _leftButton.Center = new CGPoint(center - offset, center);
+            _topButton.Center = new CGPoint(center, center - offset);
         }
     }
 
-  /// <summary>
-    /// Single face button
+    /// <summary>
+    /// Single face button - supports both text and SF Symbol icons
     /// </summary>
     public class ModernFaceButton : UIView
     {
-        private UILabel _label;
-        private UIColor _color;
+        private UILabel? _label;
+        private UIImageView? _iconView;
+   private UIColor _color;
         public event Action<bool>? OnPressed;
 
-        public ModernFaceButton(string text, UIColor color, float size, float opacity)
-{
+        public ModernFaceButton(string? text, string? sfSymbol, UIColor color, float size, float opacity)
+  {
             _color = color;
-       Frame = new CGRect(0, 0, size, size);
-            BackgroundColor = color.ColorWithAlpha((nfloat)opacity);
-   Layer.CornerRadius = size / 2;
-            Layer.BorderColor = UIColor.FromWhiteAlpha(1, 0.3f).CGColor;
-            Layer.BorderWidth = 1;
+      Frame = new CGRect(0, 0, size, size);
+  BackgroundColor = color.ColorWithAlpha((nfloat)opacity);
+      Layer.CornerRadius = size / 2;
+    Layer.BorderColor = UIColor.FromWhiteAlpha(1, 0.3f).CGColor;
+     Layer.BorderWidth = 1;
 
-   _label = new UILabel
+  if (!string.IsNullOrEmpty(sfSymbol))
+         {
+var config = UIImageSymbolConfiguration.Create(UIFont.BoldSystemFontOfSize(size * 0.4f));
+              _iconView = new UIImageView
+       {
+   Image = UIImage.GetSystemImage(sfSymbol, config),
+   TintColor = UIColor.White,
+         ContentMode = UIViewContentMode.Center
+        };
+             _iconView.SizeToFit();
+     AddSubview(_iconView);
+            }
+     else if (!string.IsNullOrEmpty(text))
             {
-         Text = text,
-    TextColor = UIColor.White,
-   Font = UIFont.BoldSystemFontOfSize(size * 0.4f),
-       TextAlignment = UITextAlignment.Center
-    };
-       _label.SizeToFit();
- AddSubview(_label);
+   _label = new UILabel
+          {
+           Text = text,
+ TextColor = UIColor.White,
+      Font = UIFont.BoldSystemFontOfSize(size * 0.4f),
+        TextAlignment = UITextAlignment.Center
+        };
+    _label.SizeToFit();
+          AddSubview(_label);
+            }
         }
 
         public override void LayoutSubviews()
-        {
-    base.LayoutSubviews();
-  _label.Center = new CGPoint(Bounds.Width / 2, Bounds.Height / 2);
-        }
+     {
+            base.LayoutSubviews();
+ var center = new CGPoint(Bounds.Width / 2, Bounds.Height / 2);
+            if (_label != null) _label.Center = center;
+         if (_iconView != null) _iconView.Center = center;
+     }
 
-     public override void TouchesBegan(NSSet touches, UIEvent? evt)
+        public override void TouchesBegan(NSSet touches, UIEvent? evt)
         {
     UIView.Animate(0.1, () =>
- {
-      Transform = CGAffineTransform.MakeScale(0.9f, 0.9f);
-          Alpha = 0.7f;
+    {
+       Transform = CGAffineTransform.MakeScale(0.9f, 0.9f);
+           Alpha = 0.7f;
             });
-      OnPressed?.Invoke(true);
-            HapticFeedback();
-        }
+            OnPressed?.Invoke(true);
+       HapticFeedback();
+   }
 
-  public override void TouchesEnded(NSSet touches, UIEvent? evt)
-   {
-        UIView.Animate(0.1, () =>
-         {
-     Transform = CGAffineTransform.MakeIdentity();
-          Alpha = 1;
-       });
- OnPressed?.Invoke(false);
-     }
+        public override void TouchesEnded(NSSet touches, UIEvent? evt)
+        {
+  UIView.Animate(0.1, () =>
+     {
+       Transform = CGAffineTransform.MakeIdentity();
+     Alpha = 1;
+     });
+     OnPressed?.Invoke(false);
+    }
 
         public override void TouchesCancelled(NSSet touches, UIEvent? evt) => TouchesEnded(touches, evt);
 
-      private void HapticFeedback()
-    {
-       var generator = new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Medium);
-         generator.Prepare();
-       generator.ImpactOccurred();
-    }
+   private void HapticFeedback()
+        {
+            var generator = new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Medium);
+          generator.Prepare();
+            generator.ImpactOccurred();
+        }
     }
 
- /// <summary>
+    /// <summary>
     /// Shoulder button (LB/RB or L1/R1)
-  /// </summary>
+    /// </summary>
     public class ModernShoulderButton : UIView
     {
-        private UILabel _label;
+    private UILabel _label;
         public event Action<bool>? OnPressed;
 
         public ModernShoulderButton(string text, float scale, float opacity)
         {
-   var width = 60 * scale;
-  var height = 32 * scale;
-            Frame = new CGRect(0, 0, width, height);
-            BackgroundColor = UIColor.FromWhiteAlpha(0.3f, opacity);
-    Layer.CornerRadius = 6;
-       Layer.BorderColor = UIColor.FromWhiteAlpha(1, 0.3f).CGColor;
-  Layer.BorderWidth = 1;
+var width = 60 * scale;
+    var height = 32 * scale;
+         Frame = new CGRect(0, 0, width, height);
+    BackgroundColor = UIColor.FromWhiteAlpha(0.3f, opacity);
+       Layer.CornerRadius = 6;
+      Layer.BorderColor = UIColor.FromWhiteAlpha(1, 0.3f).CGColor;
+       Layer.BorderWidth = 1;
 
- _label = new UILabel
-       {
-                Text = text,
- TextColor = UIColor.White,
-     Font = UIFont.BoldSystemFontOfSize(12 * scale),
-   TextAlignment = UITextAlignment.Center,
-     Frame = Bounds
-       };
-       AddSubview(_label);
+            _label = new UILabel
+    {
+              Text = text,
+      TextColor = UIColor.White,
+       Font = UIFont.BoldSystemFontOfSize(12 * scale),
+         TextAlignment = UITextAlignment.Center,
+    Frame = Bounds
+          };
+            AddSubview(_label);
         }
 
- public override void TouchesBegan(NSSet touches, UIEvent? evt)
+        public override void TouchesBegan(NSSet touches, UIEvent? evt)
         {
             BackgroundColor = UIColor.FromWhiteAlpha(0.5f, 0.8f);
-         OnPressed?.Invoke(true);
-    HapticFeedback();
-        }
+      OnPressed?.Invoke(true);
+ HapticFeedback();
+    }
 
-        public override void TouchesEnded(NSSet touches, UIEvent? evt)
-   {
- BackgroundColor = UIColor.FromWhiteAlpha(0.3f, 0.7f);
+  public override void TouchesEnded(NSSet touches, UIEvent? evt)
+     {
+         BackgroundColor = UIColor.FromWhiteAlpha(0.3f, 0.7f);
             OnPressed?.Invoke(false);
         }
 
         public override void TouchesCancelled(NSSet touches, UIEvent? evt) => TouchesEnded(touches, evt);
 
-  private void HapticFeedback()
-   {
-   var generator = new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Light);
-      generator.Prepare();
-     generator.ImpactOccurred();
- }
+        private void HapticFeedback()
+        {
+            var generator = new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Light);
+            generator.Prepare();
+            generator.ImpactOccurred();
+        }
     }
 
     /// <summary>
-/// Trigger button (LT/RT or L2/R2)
+    /// Trigger button (LT/RT or L2/R2)
     /// </summary>
     public class ModernTrigger : UIView
     {
         private UILabel _label;
-        private UIView _fillView;
+  private UIView _fillView;
         private float _value;
 
         public event Action<float>? OnValueChanged;
 
- public ModernTrigger(string text, float scale, float opacity)
-    {
-  var width = 50 * scale;
-    var height = 40 * scale;
-     Frame = new CGRect(0, 0, width, height);
-    BackgroundColor = UIColor.FromWhiteAlpha(0.2f, opacity);
- Layer.CornerRadius = 8;
-    ClipsToBounds = true;
+        public ModernTrigger(string text, float scale, float opacity)
+        {
+       var width = 50 * scale;
+ var height = 40 * scale;
+ Frame = new CGRect(0, 0, width, height);
+            BackgroundColor = UIColor.FromWhiteAlpha(0.2f, opacity);
+            Layer.CornerRadius = 8;
+            ClipsToBounds = true;
 
-            _fillView = new UIView
-            {
-     BackgroundColor = UIColor.FromRGB(100, 180, 255).ColorWithAlpha((nfloat)opacity),
-    Frame = new CGRect(0, height, width, 0)
-            };
-      AddSubview(_fillView);
-
-            _label = new UILabel
+    _fillView = new UIView
      {
-     Text = text,
+  BackgroundColor = UIColor.FromRGB(100, 180, 255).ColorWithAlpha((nfloat)opacity),
+            Frame = new CGRect(0, height, width, 0)
+     };
+  AddSubview(_fillView);
+
+        _label = new UILabel
+        {
+   Text = text,
        TextColor = UIColor.White,
-       Font = UIFont.BoldSystemFontOfSize(11 * scale),
+      Font = UIFont.BoldSystemFontOfSize(11 * scale),
         TextAlignment = UITextAlignment.Center,
-                Frame = Bounds
-    };
-          AddSubview(_label);
-    }
+Frame = Bounds
+            };
+            AddSubview(_label);
+}
 
-        public override void TouchesBegan(NSSet touches, UIEvent? evt)
+     public override void TouchesBegan(NSSet touches, UIEvent? evt)
         {
-      _value = 1.0f;
- UpdateFill();
-        OnValueChanged?.Invoke(_value);
-            HapticFeedback();
- }
+ _value = 1.0f;
+        UpdateFill();
+       OnValueChanged?.Invoke(_value);
+ HapticFeedback();
+        }
 
-        public override void TouchesEnded(NSSet touches, UIEvent? evt)
+   public override void TouchesEnded(NSSet touches, UIEvent? evt)
         {
-            _value = 0;
-            UpdateFill();
-            OnValueChanged?.Invoke(_value);
- }
+  _value = 0;
+  UpdateFill();
+   OnValueChanged?.Invoke(_value);
+        }
 
         public override void TouchesCancelled(NSSet touches, UIEvent? evt) => TouchesEnded(touches, evt);
 
-        private void UpdateFill()
-      {
-     UIView.Animate(0.1, () =>
+ private void UpdateFill()
         {
-   var fillHeight = Bounds.Height * _value;
-            _fillView.Frame = new CGRect(0, Bounds.Height - fillHeight, Bounds.Width, fillHeight);
-            });
-        }
+    UIView.Animate(0.1, () =>
+      {
+        var fillHeight = Bounds.Height * _value;
+          _fillView.Frame = new CGRect(0, Bounds.Height - fillHeight, Bounds.Width, fillHeight);
+         });
+   }
 
         private void HapticFeedback()
         {
-     var generator = new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Medium);
-       generator.Prepare();
-      generator.ImpactOccurred();
-        }
+    var generator = new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Medium);
+            generator.Prepare();
+    generator.ImpactOccurred();
+   }
     }
 
     /// <summary>
-    /// Menu/Options button
+    /// Menu/Options button - uses SF Symbols for reliable rendering
     /// </summary>
     public class ModernMenuButton : UIView
     {
-  private UILabel _label;
+        private UIImageView? _iconView;
+    private UILabel? _label;
         public event Action<bool>? OnPressed;
 
-        public ModernMenuButton(string text, float scale, float opacity)
+    public ModernMenuButton(string sfSymbolName, float scale, float opacity)
         {
-  var size = 36 * scale;
+       var size = 36 * scale;
             Frame = new CGRect(0, 0, size, size);
-  BackgroundColor = UIColor.FromWhiteAlpha(0.25f, opacity);
+    BackgroundColor = UIColor.FromWhiteAlpha(0.25f, opacity);
             Layer.CornerRadius = size / 2;
-Layer.BorderColor = UIColor.FromWhiteAlpha(1, 0.2f).CGColor;
-         Layer.BorderWidth = 1;
+     Layer.BorderColor = UIColor.FromWhiteAlpha(1, 0.2f).CGColor;
+Layer.BorderWidth = 1;
 
-            _label = new UILabel
-   {
- Text = text,
-          TextColor = UIColor.White,
-    Font = UIFont.SystemFontOfSize(10 * scale),
-     TextAlignment = UITextAlignment.Center,
-                Frame = Bounds,
-             AdjustsFontSizeToFitWidth = true,
-         MinimumScaleFactor = 0.5f
+  var config = UIImageSymbolConfiguration.Create(UIFont.SystemFontOfSize(12 * scale));
+    _iconView = new UIImageView
+       {
+         Image = UIImage.GetSystemImage(sfSymbolName, config),
+       TintColor = UIColor.White,
+       ContentMode = UIViewContentMode.Center,
+   Frame = Bounds
        };
-            AddSubview(_label);
-      }
+  AddSubview(_iconView);
+   }
 
-    public override void TouchesBegan(NSSet touches, UIEvent? evt)
+    public override void LayoutSubviews()
         {
-            UIView.Animate(0.1, () => Alpha = 0.6f);
-            OnPressed?.Invoke(true);
-        HapticFeedback();
-        }
+         base.LayoutSubviews();
+        if (_iconView != null) _iconView.Center = new CGPoint(Bounds.Width / 2, Bounds.Height / 2);
+     }
+
+        public override void TouchesBegan(NSSet touches, UIEvent? evt)
+   {
+     UIView.Animate(0.1, () => Alpha = 0.6f);
+    OnPressed?.Invoke(true);
+ HapticFeedback();
+}
 
         public override void TouchesEnded(NSSet touches, UIEvent? evt)
-        {
-        UIView.Animate(0.1, () => Alpha = 1);
-            OnPressed?.Invoke(false);
-        }
+ {
+      UIView.Animate(0.1, () => Alpha = 1);
+     OnPressed?.Invoke(false);
+ }
 
         public override void TouchesCancelled(NSSet touches, UIEvent? evt) => TouchesEnded(touches, evt);
 
       private void HapticFeedback()
         {
-       var generator = new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Light);
-        generator.Prepare();
-            generator.ImpactOccurred();
-      }
+  var generator = new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Light);
+   generator.Prepare();
+        generator.ImpactOccurred();
+    }
     }
 }
