@@ -5,7 +5,7 @@ public class InstalledGame
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string Name { get; set; } = string.Empty;
     public string Platform { get; set; } = string.Empty;
-  public string? InstallPath { get; set; }
+    public string? InstallPath { get; set; }
     public string? LaunchCommand { get; set; }
     public string? IconPath { get; set; }
     public long? SizeBytes { get; set; }
@@ -48,9 +48,10 @@ public class AppSettings
     public int StreamFps { get; set; } = 60;
     public int StreamWidth { get; set; } = 1280;
     public int StreamHeight { get; set; } = 720;
+    public bool LowLatencyMode { get; set; } = true;
     
     // UI Settings
-public string Theme { get; set; } = "Dark";
+    public string Theme { get; set; } = "Dark";
     public string AccentColor { get; set; } = "Purple";
     public bool ShowNotifications { get; set; } = true;
     
@@ -72,10 +73,11 @@ public class ApiStatusResponse
     public double? GpuUsage { get; set; }
     public double? GpuTemp { get; set; }
     public string? CurrentGame { get; set; }
- public bool IsStreaming { get; set; }
+    public bool IsStreaming { get; set; }
     public int StreamClients { get; set; }
     public double StreamLatencyMs { get; set; }
     public int StreamFps { get; set; }
+    public double StreamBitrateKbps { get; set; }
     public string? Uptime { get; set; }
 }
 
@@ -86,4 +88,20 @@ public class ConnectionInfo
     public DateTime ConnectedAt { get; set; }
     public string ConnectionType { get; set; } = "Unknown";
     public bool IsStreaming { get; set; }
+}
+
+/// <summary>
+/// Latency stats for streaming
+/// </summary>
+public class StreamLatencyStats
+{
+    public double CaptureMs { get; set; }
+    public double EncodeMs { get; set; }
+    public double SendMs { get; set; }
+    public double TotalMs { get; set; }
+    public int Fps { get; set; }
+    public double BitrateKbps { get; set; }
+    public int ClientCount { get; set; }
+    public string Resolution { get; set; } = string.Empty;
+    public int Quality { get; set; }
 }

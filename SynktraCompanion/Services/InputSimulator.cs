@@ -3,224 +3,441 @@ using System.Runtime.InteropServices;
 namespace SynktraCompanion.Services;
 
 /// <summary>
-/// Simulates keyboard, mouse, and gamepad inputs using Windows API
+/// High-performance input simulator using SendInput API
+/// Optimized for low-latency remote gaming
 /// </summary>
 public class InputSimulator
 {
     private static InputSimulator? _instance;
     public static InputSimulator Instance => _instance ??= new InputSimulator();
 
-    // Virtual gamepad state using ViGEm would be ideal, but for simplicity we'll use keyboard mapping
-    private readonly Dictionary<GamepadButtons, byte> _buttonToKey = new()
+    // Virtual gamepad to keyboard mapping
+    private readonly Dictionary<GamepadButtons, ushort> _buttonToKey = new()
     {
-        { GamepadButtons.A, 0x20 },        // Space
-   { GamepadButtons.B, 0x1B },        // Escape
+ { GamepadButtons.A, 0x20 },        // Space
+     { GamepadButtons.B, 0x1B },      // Escape
         { GamepadButtons.X, 0x45 },        // E
-        { GamepadButtons.Y, 0x52 },        // R
-        { GamepadButtons.LeftBumper, 0x51 },  // Q
+  { GamepadButtons.Y, 0x52 },        // R
+    { GamepadButtons.LeftBumper, 0x51 },  // Q
         { GamepadButtons.RightBumper, 0x46 }, // F
-        { GamepadButtons.Start, 0x0D },    // Enter
-        { GamepadButtons.Back, 0x09 },     // Tab
-   { GamepadButtons.DPadUp, 0x26 },   // Up Arrow
- { GamepadButtons.DPadDown, 0x28 }, // Down Arrow
+    { GamepadButtons.Start, 0x0D },    // Enter
+  { GamepadButtons.Back, 0x09 },     // Tab
+        { GamepadButtons.DPadUp, 0x26 },   // Up Arrow
+        { GamepadButtons.DPadDown, 0x28 }, // Down Arrow
         { GamepadButtons.DPadLeft, 0x25 }, // Left Arrow
-    { GamepadButtons.DPadRight, 0x27 } // Right Arrow
+   { GamepadButtons.DPadRight, 0x27 }, // Right Arrow
+ { GamepadButtons.LeftStick, 0x10 },  // Shift (sprint)
+        { GamepadButtons.RightStick, 0x11 } // Ctrl (crouch)
     };
 
-// Movement keys for analog sticks
-    private const byte KEY_W = 0x57;
-    private const byte KEY_A = 0x41;
-    private const byte KEY_S = 0x53;
-    private const byte KEY_D = 0x44;
+  // Movement keys for analog sticks
+    private const ushort KEY_W = 0x57;
+    private const ushort KEY_A = 0x41;
+    private const ushort KEY_S = 0x53;
+    private const ushort KEY_D = 0x44;
 
     private GamepadButtons _lastButtons;
-    private bool _leftStickUp, _leftStickDown, _leftStickLeft, _leftStickRight;
+  private bool _leftStickUp, _leftStickDown, _leftStickLeft, _leftStickRight;
+    private bool _leftTriggerDown, _rightTriggerDown;
+    private float _lastRightStickX, _lastRightStickY;
 
-    [DllImport("user32.dll")]
-    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+    // Mouse accumulator for smooth movement
+    private float _mouseAccumX, _mouseAccumY;
+    private const float MouseSensitivity = 20f;
+    private const float MouseDeadzone = 0.12f;
 
-    [DllImport("user32.dll")]
-    private static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, UIntPtr dwExtraInfo);
+    // Input batching
+    private readonly List<INPUT> _inputBatch = new(32);
+    private readonly object _batchLock = new();
+
+    #region Win32 API - SendInput (faster than keybd_event/mouse_event)
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
     [DllImport("user32.dll")]
     private static extern bool SetCursorPos(int X, int Y);
 
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT
+    {
+    public uint type;
+public InputUnion U;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct InputUnion
+    {
+        [FieldOffset(0)] public MOUSEINPUT mi;
+  [FieldOffset(0)] public KEYBDINPUT ki;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+     public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    private const uint INPUT_MOUSE = 0;
+    private const uint INPUT_KEYBOARD = 1;
+
     private const uint KEYEVENTF_KEYDOWN = 0x0000;
     private const uint KEYEVENTF_KEYUP = 0x0002;
+    private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+
     private const uint MOUSEEVENTF_MOVE = 0x0001;
-    private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+ private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
     private const uint MOUSEEVENTF_LEFTUP = 0x0004;
     private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
     private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
-    private const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
+    private const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
+    private const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
+
+    #endregion
 
     public void ProcessCommand(InputCommand cmd)
     {
-     switch (cmd.Type.ToLower())
-    {
+        switch (cmd.Type?.ToLowerInvariant())
+        {
             case "gamepad":
-  ProcessGamepad(cmd);
-                break;
-         case "mouse":
-  ProcessMouse(cmd);
-         break;
-         case "keyboard":
-        ProcessKeyboard(cmd);
+          ProcessGamepad(cmd);
+          break;
+ case "mouse":
+   ProcessMouse(cmd);
+       break;
+  case "mouseclick":
+      ProcessMouseClick(cmd);
      break;
+        case "keyboard":
+        ProcessKeyboard(cmd);
+                break;
         }
     }
 
     private void ProcessGamepad(InputCommand cmd)
     {
-   // Process buttons
-ProcessButtons(cmd.Buttons);
+        lock (_batchLock)
+        {
+ _inputBatch.Clear();
 
-        // Process left stick (WASD)
-        ProcessLeftStick(cmd.LeftStickX, cmd.LeftStickY);
+       // Process buttons
+            ProcessButtons(cmd.Buttons);
 
-    // Process right stick (mouse movement)
-        ProcessRightStick(cmd.RightStickX, cmd.RightStickY);
+            // Process left stick (WASD)
+            ProcessLeftStick(cmd.LeftStickX, cmd.LeftStickY);
 
-        // Process triggers
-        ProcessTriggers(cmd.LeftTrigger, cmd.RightTrigger);
-    }
+         // Process right stick (mouse movement)
+            ProcessRightStick(cmd.RightStickX, cmd.RightStickY);
+
+      // Process triggers
+    ProcessTriggers(cmd.LeftTrigger, cmd.RightTrigger);
+
+  // Send all batched inputs at once
+   if (_inputBatch.Count > 0)
+       {
+   var inputs = _inputBatch.ToArray();
+    SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        }
+        }
+  }
 
     private void ProcessButtons(GamepadButtons buttons)
     {
         foreach (var mapping in _buttonToKey)
-        {
-            bool wasPressed = (_lastButtons & mapping.Key) != 0;
-    bool isPressed = (buttons & mapping.Key) != 0;
-
-         if (isPressed && !wasPressed)
    {
- // Button pressed
-     keybd_event(mapping.Value, 0, KEYEVENTF_KEYDOWN, UIntPtr.Zero);
-            }
-            else if (!isPressed && wasPressed)
-        {
-       // Button released
-  keybd_event(mapping.Value, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-            }
-}
+    bool wasPressed = (_lastButtons & mapping.Key) != 0;
+     bool isPressed = (buttons & mapping.Key) != 0;
+
+      if (isPressed && !wasPressed)
+            {
+                AddKeyInput(mapping.Value, true);
+ }
+   else if (!isPressed && wasPressed)
+            {
+                AddKeyInput(mapping.Value, false);
+   }
+        }
 
         _lastButtons = buttons;
     }
 
     private void ProcessLeftStick(float x, float y)
     {
- const float deadzone = 0.2f;
+    const float deadzone = 0.25f;
 
-  // Up/Down (W/S)
-      bool up = y < -deadzone;
+        // Up/Down (W/S)
+        bool up = y < -deadzone;
         bool down = y > deadzone;
 
-        if (up != _leftStickUp)
-        {
-     keybd_event(KEY_W, 0, up ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
-            _leftStickUp = up;
-        }
+     if (up != _leftStickUp)
+      {
+    AddKeyInput(KEY_W, up);
+        _leftStickUp = up;
+ }
 
         if (down != _leftStickDown)
         {
-            keybd_event(KEY_S, 0, down ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
-         _leftStickDown = down;
-  }
+      AddKeyInput(KEY_S, down);
+            _leftStickDown = down;
+        }
 
-        // Left/Right (A/D)
+     // Left/Right (A/D)
         bool left = x < -deadzone;
         bool right = x > deadzone;
 
-        if (left != _leftStickLeft)
+ if (left != _leftStickLeft)
         {
-            keybd_event(KEY_A, 0, left ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
-          _leftStickLeft = left;
+            AddKeyInput(KEY_A, left);
+        _leftStickLeft = left;
         }
 
-    if (right != _leftStickRight)
-      {
-     keybd_event(KEY_D, 0, right ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
-            _leftStickRight = right;
-        }
+        if (right != _leftStickRight)
+        {
+            AddKeyInput(KEY_D, right);
+_leftStickRight = right;
+    }
     }
 
- private void ProcessRightStick(float x, float y)
+    private void ProcessRightStick(float x, float y)
     {
-        const float deadzone = 0.15f;
-        const int sensitivity = 15;
+        // Apply deadzone
+        if (Math.Abs(x) < MouseDeadzone) x = 0;
+        if (Math.Abs(y) < MouseDeadzone) y = 0;
 
-        if (Math.Abs(x) > deadzone || Math.Abs(y) > deadzone)
+        if (x == 0 && y == 0)
         {
-       int dx = (int)(x * sensitivity);
-  int dy = (int)(y * sensitivity);
-mouse_event(MOUSEEVENTF_MOVE, dx, dy, 0, UIntPtr.Zero);
+      _mouseAccumX = 0;
+     _mouseAccumY = 0;
+   return;
         }
-  }
 
-    private bool _leftTriggerDown, _rightTriggerDown;
+        // Apply non-linear curve for better precision at low speeds
+        x = Math.Sign(x) * MathF.Pow(Math.Abs(x), 1.5f);
+        y = Math.Sign(y) * MathF.Pow(Math.Abs(y), 1.5f);
+
+        // Accumulate fractional movement
+        _mouseAccumX += x * MouseSensitivity;
+   _mouseAccumY += y * MouseSensitivity;
+
+        int dx = (int)_mouseAccumX;
+        int dy = (int)_mouseAccumY;
+
+        if (dx != 0 || dy != 0)
+        {
+      _mouseAccumX -= dx;
+ _mouseAccumY -= dy;
+            AddMouseMove(dx, dy);
+   }
+    }
 
     private void ProcessTriggers(float left, float right)
     {
-    const float threshold = 0.5f;
+        const float threshold = 0.3f;
 
-  // Left trigger = right mouse button (aim)
-  bool leftPressed = left > threshold;
-        if (leftPressed != _leftTriggerDown)
-        {
- mouse_event(leftPressed ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP, 0, 0, 0, UIntPtr.Zero);
- _leftTriggerDown = leftPressed;
+    // Left trigger = right mouse button (aim)
+        bool leftPressed = left > threshold;
+   if (leftPressed != _leftTriggerDown)
+  {
+         AddMouseButton(false, true, leftPressed);
+          _leftTriggerDown = leftPressed;
         }
 
-      // Right trigger = left mouse button (shoot)
-  bool rightPressed = right > threshold;
+        // Right trigger = left mouse button (shoot)
+   bool rightPressed = right > threshold;
         if (rightPressed != _rightTriggerDown)
         {
- mouse_event(rightPressed ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
-         _rightTriggerDown = rightPressed;
+            AddMouseButton(true, false, rightPressed);
+    _rightTriggerDown = rightPressed;
         }
     }
 
     private void ProcessMouse(InputCommand cmd)
+  {
+        // Absolute positioning
+        if (cmd.MoveOnly != true && (cmd.MouseX != 0 || cmd.MouseY != 0))
     {
-      // Move mouse to position
- SetCursorPos(cmd.MouseX, cmd.MouseY);
+     SetCursorPos(cmd.MouseX, cmd.MouseY);
+    }
 
         // Handle clicks
    if (cmd.MouseLeft)
-    {
-            mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+{
+            var inputs = new INPUT[2];
+        inputs[0] = CreateMouseInput(MOUSEEVENTF_LEFTDOWN);
+            inputs[1] = CreateMouseInput(MOUSEEVENTF_LEFTUP);
+            SendInput(2, inputs, Marshal.SizeOf<INPUT>());
         }
+
         if (cmd.MouseRight)
         {
-            mouse_event(MOUSEEVENTF_RIGHTDOWN | MOUSEEVENTF_RIGHTUP, 0, 0, 0, UIntPtr.Zero);
+            var inputs = new INPUT[2];
+  inputs[0] = CreateMouseInput(MOUSEEVENTF_RIGHTDOWN);
+       inputs[1] = CreateMouseInput(MOUSEEVENTF_RIGHTUP);
+  SendInput(2, inputs, Marshal.SizeOf<INPUT>());
+   }
     }
-}
+
+    private void ProcessMouseClick(InputCommand cmd)
+    {
+        var inputs = new INPUT[1];
+
+        if (cmd.LeftButton)
+        {
+         inputs[0] = CreateMouseInput(cmd.Down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP);
+      SendInput(1, inputs, Marshal.SizeOf<INPUT>());
+     }
+
+  if (cmd.RightButton)
+     {
+      inputs[0] = CreateMouseInput(cmd.Down ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP);
+            SendInput(1, inputs, Marshal.SizeOf<INPUT>());
+        }
+    }
 
     private void ProcessKeyboard(InputCommand cmd)
     {
-        keybd_event((byte)cmd.KeyCode, 0, cmd.KeyDown ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP, UIntPtr.Zero);
+   var inputs = new INPUT[1];
+        inputs[0] = CreateKeyInput((ushort)cmd.KeyCode, !cmd.KeyDown);
+     SendInput(1, inputs, Marshal.SizeOf<INPUT>());
     }
+
+    #region Input Helpers
+
+    private void AddKeyInput(ushort keyCode, bool down)
+    {
+      _inputBatch.Add(CreateKeyInput(keyCode, !down));
+    }
+
+ private void AddMouseMove(int dx, int dy)
+    {
+        _inputBatch.Add(new INPUT
+  {
+     type = INPUT_MOUSE,
+      U = new InputUnion
+       {
+       mi = new MOUSEINPUT
+  {
+      dx = dx,
+   dy = dy,
+                    dwFlags = MOUSEEVENTF_MOVE,
+             time = 0,
+     dwExtraInfo = IntPtr.Zero
+             }
+            }
+        });
+    }
+
+    private void AddMouseButton(bool left, bool right, bool down)
+    {
+        uint flags = 0;
+      if (left) flags |= down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
+        if (right) flags |= down ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
+
+        _inputBatch.Add(CreateMouseInput(flags));
+    }
+
+    private static INPUT CreateKeyInput(ushort keyCode, bool up)
+    {
+        uint flags = up ? KEYEVENTF_KEYUP : KEYEVENTF_KEYDOWN;
+
+    // Extended keys (arrows, etc.)
+        if (keyCode is >= 0x21 and <= 0x2E or 0x2D or 0x2E)
+        {
+    flags |= KEYEVENTF_EXTENDEDKEY;
+      }
+
+  return new INPUT
+        {
+     type = INPUT_KEYBOARD,
+            U = new InputUnion
+   {
+          ki = new KEYBDINPUT
+         {
+  wVk = keyCode,
+     wScan = 0,
+            dwFlags = flags,
+       time = 0,
+            dwExtraInfo = IntPtr.Zero
+         }
+         }
+        };
+}
+
+    private static INPUT CreateMouseInput(uint flags)
+    {
+        return new INPUT
+        {
+   type = INPUT_MOUSE,
+            U = new InputUnion
+    {
+  mi = new MOUSEINPUT
+          {
+         dx = 0,
+              dy = 0,
+        dwFlags = flags,
+      time = 0,
+       dwExtraInfo = IntPtr.Zero
+          }
+   }
+  };
+    }
+
+    #endregion
 
     public void ReleaseAllKeys()
     {
-     // Release all mapped keys
-      foreach (var key in _buttonToKey.Values)
- {
-      keybd_event(key, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        var inputs = new List<INPUT>();
+
+ // Release all mapped keys
+        foreach (var key in _buttonToKey.Values)
+  {
+            inputs.Add(CreateKeyInput(key, true));
         }
 
         // Release WASD
-        keybd_event(KEY_W, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-  keybd_event(KEY_A, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-        keybd_event(KEY_S, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-  keybd_event(KEY_D, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+   inputs.Add(CreateKeyInput(KEY_W, true));
+ inputs.Add(CreateKeyInput(KEY_A, true));
+        inputs.Add(CreateKeyInput(KEY_S, true));
+  inputs.Add(CreateKeyInput(KEY_D, true));
 
-        // Release mouse buttons
-        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
-        mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, UIntPtr.Zero);
+      // Release mouse buttons
+        inputs.Add(CreateMouseInput(MOUSEEVENTF_LEFTUP));
+        inputs.Add(CreateMouseInput(MOUSEEVENTF_RIGHTUP));
 
-        _lastButtons = GamepadButtons.None;
+        if (inputs.Count > 0)
+        {
+          var inputArray = inputs.ToArray();
+            SendInput((uint)inputArray.Length, inputArray, Marshal.SizeOf<INPUT>());
+   }
+
+  _lastButtons = GamepadButtons.None;
         _leftStickUp = _leftStickDown = _leftStickLeft = _leftStickRight = false;
-     _leftTriggerDown = _rightTriggerDown = false;
+        _leftTriggerDown = _rightTriggerDown = false;
+        _mouseAccumX = _mouseAccumY = 0;
     }
 }

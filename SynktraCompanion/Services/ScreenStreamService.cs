@@ -108,7 +108,7 @@ _isStreaming = true;
 
     public void SetResolution(int width, int height)
     {
-        _resolution = new Size(Math.Clamp(width, 320, 1920), Math.Clamp(height, 240, 1080));
+        _resolution = new Size(Math.Clamp(width, 320, 1920), Math Clamp(height, 240, 1080));
     }
 
     private async Task AcceptConnectionsAsync(CancellationToken ct)
@@ -350,25 +350,31 @@ graphics.ReleaseHdc(graphicsDc);
 /// </summary>
 public class InputCommand
 {
-    public string Type { get; set; } = string.Empty; // "gamepad", "mouse", "keyboard"
+    public string Type { get; set; } = string.Empty; // "gamepad", "mouse", "mouseclick", "keyboard"
     
-    // Gamepad
+  // Gamepad
     public float LeftStickX { get; set; }
     public float LeftStickY { get; set; }
     public float RightStickX { get; set; }
     public float RightStickY { get; set; }
     public float LeftTrigger { get; set; }
- public float RightTrigger { get; set; }
- public GamepadButtons Buttons { get; set; }
+    public float RightTrigger { get; set; }
+    public GamepadButtons Buttons { get; set; }
     
     // Mouse
     public int MouseX { get; set; }
     public int MouseY { get; set; }
     public bool MouseLeft { get; set; }
     public bool MouseRight { get; set; }
+    public bool? MoveOnly { get; set; } // For relative mouse movement without clicks
+    
+    // Mouse click (separate from move)
+    public bool LeftButton { get; set; }
+    public bool RightButton { get; set; }
+    public bool Down { get; set; } // true = press, false = release
     
     // Keyboard
-public int KeyCode { get; set; }
+    public int KeyCode { get; set; }
     public bool KeyDown { get; set; }
 }
 
