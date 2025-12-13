@@ -46,31 +46,31 @@ public partial class MainWindow : Window
     private bool _isInitialized;
 
     public MainWindow()
-    {
-        InitializeComponent();
+  {
+     InitializeComponent();
 
-   _gameScanner = new GameScanner();
-        _systemMonitor = new SystemMonitor();
-        _apiServer = new ApiServer();
- _discord = DiscordPresenceService.Instance;
-     _sessionStart = DateTime.Now;
+     _gameScanner = new GameScanner();
+       _systemMonitor = new SystemMonitor();
+ _apiServer = new ApiServer();
+         _discord = DiscordPresenceService.Instance;
+    _sessionStart = DateTime.Now;
 
-        _updateTimer = new DispatcherTimer
-        {
-       Interval = TimeSpan.FromSeconds(2)
-        };
-  _updateTimer.Tick += UpdateTimer_Tick;
+     _updateTimer = new DispatcherTimer
+ {
+          Interval = TimeSpan.FromSeconds(2)
+   };
+        _updateTimer.Tick += UpdateTimer_Tick;
 
-        _toastTimer = new DispatcherTimer
-   {
-            Interval = TimeSpan.FromSeconds(3)
-        };
-   _toastTimer.Tick += ToastTimer_Tick;
+_toastTimer = new DispatcherTimer
+  {
+      Interval = TimeSpan.FromSeconds(3)
+   };
+            _toastTimer.Tick += ToastTimer_Tick;
 
-        Loaded += MainWindow_Loaded;
-        Closing += MainWindow_Closing;
-        StateChanged += MainWindow_StateChanged;
-    }
+       Loaded += MainWindow_Loaded;
+  Closing += MainWindow_Closing;
+      StateChanged += MainWindow_StateChanged;
+  }
 
     #region Toast Notifications
     private void ShowToast(string message, bool isSuccess = true, bool isError = false)
@@ -219,7 +219,23 @@ ToastNotification.BeginAnimation(OpacityProperty, fadeIn);
 
     #region Window Controls
     private void MinBtn_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-    private void MaxBtn_Click(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    
+    private void MaxBtn_Click(object sender, RoutedEventArgs e)
+    {
+   if (WindowState == WindowState.Maximized)
+      {
+         WindowState = WindowState.Normal;
+ }
+      else
+ {
+            // Get the working area (excludes taskbar)
+ var screen = System.Windows.SystemParameters.WorkArea;
+            MaxHeight = screen.Height;
+       MaxWidth = screen.Width;
+  WindowState = WindowState.Maximized;
+        }
+    }
+    
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => Close();
     #endregion
 
