@@ -363,29 +363,20 @@ namespace gaming_hub.ViewControllers
 
         private void StartHideTimer()
         {
-            _hideTimer = NSTimer.CreateRepeatingScheduledTimer(3.0, t =>
-        {
-    if ((DateTime.Now - _lastInteraction).TotalSeconds > 8 && _controlsVisible)
-        HideControls();
-            });
+            // Controls are always visible now - no auto-hide
+            // Timer disabled to keep settings menu always accessible
         }
 
         private void ShowControls()
         {
-            _lastInteraction = DateTime.Now;
-            if (!_controlsVisible)
-            {
-      _controlsVisible = true;
-         _controlsOverlay.Hidden = false;
- UIView.Animate(0.3, () => _controlsOverlay.Alpha = 1);
- }
+            // Controls are always visible - this method now does nothing
+            // Keeping it for compatibility with ShowMenu() call
         }
 
         private void HideControls()
         {
-  _controlsVisible = false;
-     UIView.Animate(0.3, () => _controlsOverlay.Alpha = 0);
-            // Don't set Hidden = true so tap gesture still works
+            // Controls are always visible - this method now does nothing
+            // Auto-hide has been disabled
         }
         private void ToggleInputMode()
         {
@@ -1003,7 +994,7 @@ var generator = new UIImpactFeedbackGenerator(style);
             generator.Prepare();
     generator.ImpactOccurred();
     }
-    }
+  }
 
   /// <summary>
     /// Modern virtual gamepad view with glass-morphic design
