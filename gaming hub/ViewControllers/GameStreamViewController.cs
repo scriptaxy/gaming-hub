@@ -346,14 +346,23 @@ namespace gaming_hub.ViewControllers
             StreamingClient.Instance.OnConnected += OnStreamConnected;
             StreamingClient.Instance.OnDisconnected += OnStreamDisconnected;
             StreamingClient.Instance.OnError += OnStreamError;
+
+            // Add tap gesture to show controls when hidden
+            var showControlsTap = new UITapGestureRecognizer(() => ShowControls())
+            {
+                NumberOfTapsRequired = 1,
+                NumberOfTouchesRequired = 1
+            };
+            _streamView.UserInteractionEnabled = true;
+            _streamView.AddGestureRecognizer(showControlsTap);
         }
 
         private void StartHideTimer()
         {
             _hideTimer = NSTimer.CreateRepeatingScheduledTimer(3.0, t =>
-            {
-                if ((DateTime.Now - _lastInteraction).TotalSeconds > 5 && _controlsVisible)
-                    HideControls();
+        {
+    if ((DateTime.Now - _lastInteraction).TotalSeconds > 8 && _controlsVisible)
+        HideControls();
             });
         }
 
@@ -362,17 +371,18 @@ namespace gaming_hub.ViewControllers
             _lastInteraction = DateTime.Now;
             if (!_controlsVisible)
             {
-                _controlsVisible = true;
-                UIView.Animate(0.3, () => _controlsOverlay.Alpha = 1);
-            }
+      _controlsVisible = true;
+         _controlsOverlay.Hidden = false;
+ UIView.Animate(0.3, () => _controlsOverlay.Alpha = 1);
+ }
         }
 
         private void HideControls()
         {
-            _controlsVisible = false;
-            UIView.Animate(0.3, () => _controlsOverlay.Alpha = 0);
+  _controlsVisible = false;
+     UIView.Animate(0.3, () => _controlsOverlay.Alpha = 0);
+            // Don't set Hidden = true so tap gesture still works
         }
-
         private void ToggleInputMode()
         {
             _inputMode = _inputMode == StreamInputMode.Touch ? StreamInputMode.Controller : StreamInputMode.Touch;
@@ -1223,7 +1233,7 @@ namespace gaming_hub.ViewControllers
 
    // D-Pad - above left stick
   var dpadX = safeArea.Left + margin + (stickSize - dpadSize) / 2;
-   var dpadY = Bounds.Height - stickSize - bottomMargin - dpadSize - 20;
+  var dpadY = Bounds.Height - stickSize - bottomMargin - dpadSize - 20;
             _dpad?.SetFrame(new CGRect(dpadX, dpadY, dpadSize, dpadSize));
 
           // Right stick - bottom right

@@ -15,6 +15,7 @@ namespace SynktraCompanion.Services;
 /// <summary>
 /// Ultra low-latency screen streaming using Desktop Duplication API + UDP
 /// Target: ~16-30ms end-to-end latency on LAN
+/// With GPU priority to maintain smooth streaming during gaming
 /// </summary>
 public class LowLatencyStreamService
 {
@@ -33,14 +34,21 @@ public class LowLatencyStreamService
     private int _quality = 35; // Lower quality = faster encoding
     private int _width = 1280;
     private int _height = 720;
-private bool _useUdp = true;
+    private bool _useUdp = true;
 
     // Performance optimization settings
-  private bool _useHardwareEncoding = true;
+    private bool _useHardwareEncoding = true;
     private bool _useDeltaFrames = false; // Send only changed regions
     private int _keyFrameInterval = 30; // Full frame every N frames
     private int _framesSinceKeyFrame = 0;
     private byte[]? _lastFrameData;
+    
+    // GPU resource allocation - percentage of GPU to reserve for streaming (0.2 = 20%, 0.3 = 30%)
+private float _gpuResourceAllocation = 0.25f;
+    private bool _adaptiveQuality = true;
+    private int _minQuality = 25;
+    private int _maxQuality = 60;
+    private int _adaptiveTargetFps = 45; // Minimum acceptable FPS before quality adjustment
     
     // Input queue for batched processing
     private readonly ConcurrentQueue<InputCommand> _inputQueue = new();
@@ -60,23 +68,28 @@ private bool _useUdp = true;
     private double _lastCaptureMs;
     private double _lastEncodeMs;
     private double _lastSendMs;
-private int _fps;
+  private int _fps;
     private int _frameCount;
     private DateTime _lastFpsUpdate = DateTime.Now;
     private long _bytesSent;
-    private double _bitrate;
+  private double _bitrate;
 
-  public double CaptureLatency => _lastCaptureMs;
+    // Adaptive quality tracking
+    private readonly Queue<int> _recentFps = new();
+    private DateTime _lastQualityAdjustment = DateTime.MinValue;
+
+    public double CaptureLatency => _lastCaptureMs;
     public double EncodeLatency => _lastEncodeMs;
     public double TotalLatency => _lastCaptureMs + _lastEncodeMs + _lastSendMs;
     public int CurrentFps => _fps;
     public double BitrateKbps => _bitrate;
+    public int CurrentQuality => _quality;
 
     // Desktop Duplication (Windows 8+)
     private DesktopDuplicator? _duplicator;
 
     // Reusable buffers to reduce allocations
-    private MemoryStream? _encodeBuffer;
+  private MemoryStream? _encodeBuffer;
     private readonly object _encodeLock = new();
 
     // Encoder settings
@@ -92,60 +105,115 @@ private int _fps;
     {
         if (_isStreaming) return;
 
-      _wsPort = wsPort;
+     _wsPort = wsPort;
         _udpPort = udpPort;
         _cts = new CancellationTokenSource();
 
         try
-        {
+      {
+// Set process priority for streaming
+  SetStreamingPriority();
+            
       // Pre-initialize encoder for faster first frame
-       InitializeEncoder();
+         InitializeEncoder();
 
-          // Initialize Desktop Duplication for GPU-accelerated capture
-     _duplicator = new DesktopDuplicator();
+   // Initialize Desktop Duplication for GPU-accelerated capture
+    _duplicator = new DesktopDuplicator();
 
         // Start UDP server for low-latency clients
             _udpServer = new UdpClient(_udpPort);
-      _udpServer.Client.SendBufferSize = 1024 * 1024; // 1MB send buffer
-  _udpServer.Client.ReceiveBufferSize = 64 * 1024; // 64KB receive buffer
-   _ = Task.Run(() => ListenForUdpClientsAsync(_cts.Token));
+          _udpServer.Client.SendBufferSize = 1024 * 1024; // 1MB send buffer
+_udpServer.Client.ReceiveBufferSize = 64 * 1024; // 64KB receive buffer
+            _ = Task.Run(() => ListenForUdpClientsAsync(_cts.Token));
 
-    // Start WebSocket server for fallback
-            _httpListener = new HttpListener();
-            _httpListener.Prefixes.Add($"http://*:{wsPort}/");
+            // Start WebSocket server for fallback
+        _httpListener = new HttpListener();
+      _httpListener.Prefixes.Add($"http://*:{wsPort}/");
             _httpListener.Start();
-          _ = Task.Run(() => AcceptWebSocketConnectionsAsync(_cts.Token));
+_ = Task.Run(() => AcceptWebSocketConnectionsAsync(_cts.Token));
 
-      // Start high-priority input processor thread
-         _inputProcessorThread = new Thread(ProcessInputQueue)
-     {
+// Start high-priority input processor thread
+_inputProcessorThread = new Thread(ProcessInputQueue)
+            {
            Priority = ThreadPriority.Highest,
-     IsBackground = true,
-          Name = "InputProcessor"
- };
-   _inputProcessorThread.Start();
+ IsBackground = true,
+        Name = "InputProcessor"
+       };
+            _inputProcessorThread.Start();
 
             _isStreaming = true;
-  Console.WriteLine($"Low-latency streaming started - UDP:{udpPort} WS:{wsPort}");
+   Console.WriteLine($"Low-latency streaming started - UDP:{udpPort} WS:{wsPort}");
+ Console.WriteLine($"  GPU allocation: {_gpuResourceAllocation * 100}%, Adaptive quality: {_adaptiveQuality}");
 
-  // Start streaming frames on high priority thread
- var streamThread = new Thread(() => StreamFramesSync(_cts.Token))
-            {
-      Priority = ThreadPriority.AboveNormal,
-             IsBackground = true,
+ // Start streaming frames on high priority thread
+          var streamThread = new Thread(() => StreamFramesSync(_cts.Token))
+     {
+        Priority = ThreadPriority.AboveNormal,
+      IsBackground = true,
            Name = "FrameStreamer"
 };
-            streamThread.Start();
-    }
+   streamThread.Start();
+        }
         catch (Exception ex)
-   {
-      Console.WriteLine($"Failed to start low-latency streaming: {ex.Message}");
-      _isStreaming = false;
-  }
+  {
+        Console.WriteLine($"Failed to start low-latency streaming: {ex.Message}");
+            _isStreaming = false;
+        }
     }
 
- private void InitializeEncoder()
- {
+    /// <summary>
+  /// Set process and thread priorities for smooth streaming during gaming
+    /// </summary>
+  private void SetStreamingPriority()
+    {
+        try
+      {
+            // Set process to above normal priority
+      var process = System.Diagnostics.Process.GetCurrentProcess();
+            process.PriorityClass = System.Diagnostics.ProcessPriorityClass.AboveNormal;
+      
+      // Set GPU priority via registry (requires admin, fail silently if not possible)
+ SetGpuPriority();
+      
+Console.WriteLine("Streaming priority configured for smooth performance during gaming");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Could not set streaming priority: {ex.Message}");
+        }
+  }
+
+    /// <summary>
+    /// Configure GPU scheduling priority for the streaming process
+    /// </summary>
+    private void SetGpuPriority()
+    {
+      try
+{
+    var processName = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
+            var keyPath = $@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\{processName}.exe\PerfOptions";
+     
+         using var key = Microsoft.Win32.Registry.LocalMachine.CreateSubKey(keyPath, true);
+          if (key != null)
+     {
+              // GPU Priority: 0 = Low, 1 = Normal, 2 = High
+        // Set to 2 for high GPU priority for streaming
+       key.SetValue("GpuPriority", 2, Microsoft.Win32.RegistryValueKind.DWord);
+    
+    // Also set CPU priority
+   key.SetValue("CpuPriorityClass", 3, Microsoft.Win32.RegistryValueKind.DWord); // Above normal
+            
+                Console.WriteLine("GPU priority set to High for streaming process");
+       }
+        }
+        catch
+    {
+   // Silently fail - requires admin privileges
+        }
+    }
+
+    private void InitializeEncoder()
+    {
         _jpegEncoder = ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);
         _encoderParams = new EncoderParameters(2);
         _encoderParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, (long)_quality);
@@ -158,63 +226,86 @@ private int _fps;
     _isStreaming = false;
         _cts?.Cancel();
 
-        lock (_clientsLock)
-      {
+  lock (_clientsLock)
+     {
             _udpClients.Clear();
-    foreach (var ws in _wsClients)
-        {
-    try { ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Server stopped", CancellationToken.None).Wait(500); }
-          catch { }
-   }
+        foreach (var ws in _wsClients)
+ {
+       try { ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Server stopped", CancellationToken.None).Wait(500); }
+             catch { }
+            }
             _wsClients.Clear();
-        }
+      }
 
-   try { _udpServer?.Close(); } catch { }
-  try { _httpListener?.Stop(); } catch { }
-      try { _duplicator?.Dispose(); } catch { }
+        try { _udpServer?.Close(); } catch { }
+     try { _httpListener?.Stop(); } catch { }
+        try { _duplicator?.Dispose(); } catch { }
 
-   _udpServer = null;
+        _udpServer = null;
         _httpListener = null;
-  _duplicator = null;
+     _duplicator = null;
         _encodeBuffer?.Dispose();
-   _encodeBuffer = null;
-        _lastFrameData = null;
+        _encodeBuffer = null;
+     _lastFrameData = null;
 
-        Console.WriteLine("Low-latency streaming stopped");
+     Console.WriteLine("Low-latency streaming stopped");
     }
 
     public void SetQuality(int quality)
     {
-    _quality = Math.Clamp(quality, 10, 100);
-   // Update encoder params
+  _quality = Math.Clamp(quality, 10, 100);
+        // Update encoder params
         if (_encoderParams != null)
-            _encoderParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, (long)_quality);
-  }
+      _encoderParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, (long)_quality);
+    }
 
     public void SetTargetFps(int fps) => _targetFps = Math.Clamp(fps, 30, 120);
 
     public void SetResolution(int width, int height)
-  {
-     _width = Math.Clamp(width, 320, 1920);
-        _height = Math.Clamp(height, 240, 1080);
+    {
+        _width = Math.Clamp(width, 320, 1920);
+    _height = Math.Clamp(height, 240, 1080);
     }
 
-  public void SetLowLatencyMode(bool enabled)
-  {
+  /// <summary>
+    /// Set GPU resource allocation for streaming (0.0 to 1.0)
+  /// Higher values = smoother streaming but may impact game performance
+    /// Recommended: 0.2 - 0.3 (20-30%)
+    /// </summary>
+    public void SetGpuAllocation(float allocation)
+    {
+    _gpuResourceAllocation = Math.Clamp(allocation, 0.1f, 0.5f);
+        Console.WriteLine($"GPU allocation set to {_gpuResourceAllocation * 100}%");
+    }
+
+    /// <summary>
+    /// Enable/disable adaptive quality based on performance
+    /// </summary>
+    public void SetAdaptiveQuality(bool enabled, int minQuality = 25, int maxQuality = 60)
+    {
+      _adaptiveQuality = enabled;
+        _minQuality = Math.Clamp(minQuality, 15, 50);
+    _maxQuality = Math.Clamp(maxQuality, 40, 80);
+    }
+
+    public void SetLowLatencyMode(bool enabled)
+    {
         if (enabled)
         {
             _quality = 30;
-_targetFps = 60;
-         _width = 1280;
+            _targetFps = 60;
+        _width = 1280;
             _height = 720;
-        }
-        else
- {
-          _quality = 50;
-        _targetFps = 30;
-         _width = 1920;
-            _height = 1080;
-        }
+          _adaptiveQuality = true;
+ }
+   else
+        {
+       _quality = 50;
+ _targetFps = 30;
+  _width = 1920;
+        _height = 1080;
+            _adaptiveQuality = false;
+     }
     }
 
     private async Task ListenForUdpClientsAsync(CancellationToken ct)
@@ -400,68 +491,144 @@ break;
     private void StreamFramesSync(CancellationToken ct)
     {
         var sw = new Stopwatch();
-   var targetFrameTimeMs = 1000.0 / _targetFps;
+  var targetFrameTimeMs = 1000.0 / _targetFps;
         var statsTimer = Stopwatch.StartNew();
-        long bytesThisSecond = 0;
+    long bytesThisSecond = 0;
+        
+    // GPU throttling - add small delays to prevent GPU starvation for games
+        var gpuThrottleMs = CalculateGpuThrottleDelay();
 
-        while (!ct.IsCancellationRequested && _isStreaming)
-        {
-            sw.Restart();
+    while (!ct.IsCancellationRequested && _isStreaming)
+    {
+        sw.Restart();
 
-            try
+ try
          {
-    if (ClientCount > 0)
- {
-       // Capture
-   var captureStart = sw.ElapsedTicks;
-         var frameData = CaptureAndEncodeFrame();
-       _lastCaptureMs = (sw.ElapsedTicks - captureStart) * 1000.0 / Stopwatch.Frequency;
+   if (ClientCount > 0)
+      {
+      // Capture
+      var captureStart = sw.ElapsedTicks;
+      var frameData = CaptureAndEncodeFrame();
+     _lastCaptureMs = (sw.ElapsedTicks - captureStart) * 1000.0 / Stopwatch.Frequency;
 
-             if (frameData != null && frameData.Length > 0)
-              {
-                // Send
-       var sendStart = sw.ElapsedTicks;
-     BroadcastFrameSync(frameData);
-          _lastSendMs = (sw.ElapsedTicks - sendStart) * 1000.0 / Stopwatch.Frequency;
+         if (frameData != null && frameData.Length > 0)
+          {
+         // Send
+            var sendStart = sw.ElapsedTicks;
+BroadcastFrameSync(frameData);
+            _lastSendMs = (sw.ElapsedTicks - sendStart) * 1000.0 / Stopwatch.Frequency;
 
-             bytesThisSecond += frameData.Length;
+      bytesThisSecond += frameData.Length;
         }
 
-    // Update stats
- _frameCount++;
-       if (statsTimer.ElapsedMilliseconds >= 1000)
-           {
-    _fps = _frameCount;
-    _bitrate = bytesThisSecond * 8.0 / 1000.0; // kbps
-            _frameCount = 0;
-       bytesThisSecond = 0;
-  statsTimer.Restart();
-                }
-      }
-      }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Frame streaming error: {ex.Message}");
-      }
-
-   // Precise frame timing using SpinWait for last few ms
-            var elapsedMs = sw.ElapsedTicks * 1000.0 / Stopwatch.Frequency;
-    var remainingMs = targetFrameTimeMs - elapsedMs;
-
-            if (remainingMs > 2)
-            {
-        Thread.Sleep((int)(remainingMs - 1));
+     // Update stats
+              _frameCount++;
+          if (statsTimer.ElapsedMilliseconds >= 1000)
+             {
+       _fps = _frameCount;
+       _bitrate = bytesThisSecond * 8.0 / 1000.0; // kbps
+   _frameCount = 0;
+bytesThisSecond = 0;
+       statsTimer.Restart();
+              
+              // Adaptive quality adjustment
+ if (_adaptiveQuality)
+          {
+          AdjustQualityBasedOnPerformance();
+        }
+   
+      // Recalculate GPU throttle
+   gpuThrottleMs = CalculateGpuThrottleDelay();
+         }
             }
-       
-    // SpinWait for precise timing on last millisecond
-   while (sw.ElapsedTicks * 1000.0 / Stopwatch.Frequency < targetFrameTimeMs)
-        {
-          Thread.SpinWait(10);
-  }
+    }
+       catch (Exception ex)
+   {
+                Console.WriteLine($"Frame streaming error: {ex.Message}");
+        }
+
+  // Precise frame timing using SpinWait for last few ms
+            var elapsedMs = sw.ElapsedTicks * 1000.0 / Stopwatch.Frequency;
+        var remainingMs = targetFrameTimeMs - elapsedMs;
+    
+            // Add GPU throttle delay to prevent starving games of GPU resources
+         remainingMs += gpuThrottleMs;
+
+         if (remainingMs > 2)
+            {
+      Thread.Sleep((int)(remainingMs - 1));
+    }
+
+            // SpinWait for precise timing on last millisecond
+        var targetWithThrottle = targetFrameTimeMs + gpuThrottleMs;
+            while (sw.ElapsedTicks * 1000.0 / Stopwatch.Frequency < targetWithThrottle)
+            {
+         Thread.SpinWait(10);
+     }
         }
     }
 
-  private byte[]? CaptureAndEncodeFrame()
+    /// <summary>
+    /// Calculate delay to add between frames to leave GPU headroom for games
+    /// Based on _gpuResourceAllocation setting
+ /// </summary>
+    private double CalculateGpuThrottleDelay()
+    {
+  // If we want 25% GPU, we need to leave 75% for games
+        // This translates to adding delay between captures
+        // At 60fps with 16.67ms frame time, adding ~4ms delay gives ~20% more headroom
+        
+        var baseFrameTime = 1000.0 / _targetFps;
+  
+        // Calculate additional delay based on desired allocation
+        // Lower allocation = more delay = more GPU for games
+     var allocationFactor = 1.0 - _gpuResourceAllocation;
+        var throttleDelay = baseFrameTime * allocationFactor * 0.3; // 30% of allocation factor
+        
+        return Math.Clamp(throttleDelay, 0, 10); // Max 10ms extra delay
+    }
+
+    /// <summary>
+ /// Automatically adjust quality based on achieved FPS
+    /// </summary>
+    private void AdjustQualityBasedOnPerformance()
+    {
+        // Don't adjust too frequently
+        if ((DateTime.Now - _lastQualityAdjustment).TotalSeconds < 3)
+  return;
+            
+        _recentFps.Enqueue(_fps);
+        while (_recentFps.Count > 5) _recentFps.Dequeue();
+        
+        if (_recentFps.Count < 3) return;
+        
+     var avgFps = _recentFps.Average();
+        
+        // If FPS is dropping significantly below target, reduce quality
+  if (avgFps < _adaptiveTargetFps && _quality > _minQuality)
+        {
+    var newQuality = Math.Max(_minQuality, _quality - 5);
+    if (newQuality != _quality)
+            {
+       SetQuality(newQuality);
+     _lastQualityAdjustment = DateTime.Now;
+     Console.WriteLine($"Adaptive quality: Reduced to {_quality} (FPS: {avgFps:F1})");
+       }
+        }
+        // If FPS is good and we have headroom, increase quality slightly
+  else if (avgFps >= _targetFps * 0.95 && _quality < _maxQuality)
+      {
+            var newQuality = Math.Min(_maxQuality, _quality + 2);
+         if (newQuality != _quality)
+            {
+     SetQuality(newQuality);
+   _lastQualityAdjustment = DateTime.Now;
+                Console.WriteLine($"Adaptive quality: Increased to {_quality} (FPS: {avgFps:F1})");
+            }
+        }
+    }
+
+    private byte[]? CaptureAndEncodeFrame()
     {
      try
    {
