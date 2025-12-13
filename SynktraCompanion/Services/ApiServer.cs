@@ -468,9 +468,7 @@ public class ApiServer
                 result = GetMonitors();
             else if (path == "/api/stream/monitor" && method == "POST")
                 result = await SelectMonitorAsync(request);
-            // Tailscale integration endpoints
-            else if (path == "/api/network/tailscale" && method == "GET")
-                result = GetTailscaleStatus();
+            // Network info endpoint
             else if (path == "/api/network/info" && method == "GET")
                 result = GetNetworkInfo();
             // Encoder info endpoint
@@ -478,6 +476,15 @@ public class ApiServer
                 result = GetEncoderInfo();
             else if (path == "/api/stream/codec" && method == "POST")
                 result = await SetCodecAsync(request);
+            // Remote access endpoints (built-in, no Tailscale needed)
+            else if (path == "/api/remote/enable" && method == "POST")
+                result = await EnableRemoteAccessAsync();
+            else if (path == "/api/remote/disable" && method == "POST")
+                result = DisableRemoteAccess();
+            else if (path == "/api/remote/status" && method == "GET")
+                result = GetRemoteAccessStatus();
+            else if (path == "/api/remote/connect" && method == "POST")
+                result = await ValidateRemoteConnectionAsync(request);
 
             if (result != null)
                 await SendResponse(response, 200, result);
@@ -929,55 +936,33 @@ public class ApiServer
     #region Network & Tailscale Endpoints
 
     /// <summary>
-    /// Get Tailscale connection status for remote access
-    /// </summary>
-    private object GetTailscaleStatus()
-    {
-        var info = TailscaleIntegration.Instance.GetConnectionInfo();
-        return new
-        {
-            installed = info.IsInstalled,
-            connected = info.IsConnected,
-            tailscaleIP = info.TailscaleIP,
-            localIP = info.LocalIP,
-            hostname = info.Hostname,
-            status = info.Status,
-            downloadUrl = info.DownloadUrl,
-            setupInstructions = info.SetupInstructions,
-            message = info.IsConnected
-                ? $"Remote access available via {info.TailscaleIP}"
-                : info.IsInstalled
-                    ? "Tailscale installed but not connected"
-                    : "Install Tailscale for remote access from anywhere"
-        };
-    }
-
-    /// <summary>
     /// Get all network connection info
     /// </summary>
     private object GetNetworkInfo()
     {
-        var tailscale = TailscaleIntegration.Instance.GetConnectionInfo();
-        var macAddress = GetPrimaryMacAddress();
-
-        return new
+     var macAddress = GetPrimaryMacAddress();
+        var remoteInfo = RemoteAccessService.Instance.GetConnectionInfo();
+        
+     return new
         {
-            localIP = tailscale.LocalIP,
-            tailscaleIP = tailscale.TailscaleIP,
-            tailscaleConnected = tailscale.IsConnected,
-            bestIP = TailscaleIntegration.Instance.GetBestStreamingIP(),
-            macAddress = macAddress,
-            hostname = Environment.MachineName,
-            ports = new
-            {
-                api = _port,
-                streamWs = StreamWsPort,
+ localIP = remoteInfo.LocalIP,
+      publicIP = remoteInfo.PublicIP,
+       publicPort = remoteInfo.PublicPort,
+       remoteAccessEnabled = remoteInfo.IsEnabled,
+       connectionCode = remoteInfo.ConnectionCode,
+   natType = remoteInfo.NatType.ToString(),
+       directConnectionPossible = remoteInfo.DirectConnectionPossible,
+ macAddress = macAddress,
+        hostname = Environment.MachineName,
+  ports = new
+     {
+             api = _port,
+     streamWs = StreamWsPort,
                 streamUdp = StreamUdpPort,
-                audio = AudioStreamPort,
-                discovery = DiscoveryPort
-            },
-            remoteAccessReady = tailscale.IsConnected,
-            wakeOnLanReady = !string.IsNullOrEmpty(macAddress)
+   audio = AudioStreamPort,
+           discovery = DiscoveryPort
+       },
+        wakeOnLanReady = !string.IsNullOrEmpty(macAddress)
         };
     }
 
@@ -1042,6 +1027,118 @@ public class ApiServer
                 };
             }
             return new { success = false, error = "Invalid request" };
+        }
+        catch (Exception ex)
+        {
+            return new { success = false, error = ex.Message };
+        }
+    }
+
+    #endregion
+
+    #region Remote Access Endpoints (Built-in, No External VPN Needed)
+
+    /// <summary>
+    /// Enable remote access - detects public IP and NAT type
+    /// </summary>
+    private async Task<object> EnableRemoteAccessAsync()
+    {
+        try
+        {
+            var info = await RemoteAccessService.Instance.EnableRemoteAccessAsync();
+            return new
+            {
+                success = true,
+                enabled = info.IsEnabled,
+                connectionCode = info.ConnectionCode,
+                publicIP = info.PublicIP,
+                publicPort = info.PublicPort,
+                natType = info.NatType.ToString(),
+                directConnectionPossible = info.DirectConnectionPossible,
+                connectionUrl = info.ConnectionUrl,
+                qrCodeData = info.QrCodeData,
+                instructions = info.Instructions,
+                message = info.DirectConnectionPossible
+                    ? $"Remote access enabled! Use code: {info.ConnectionCode}"
+                    : "Remote access enabled, but direct connection may require port forwarding"
+            };
+        }
+        catch (Exception ex)
+        {
+            return new { success = false, error = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Disable remote access
+    /// </summary>
+    private object DisableRemoteAccess()
+    {
+        RemoteAccessService.Instance.DisableRemoteAccess();
+        return new { success = true, message = "Remote access disabled" };
+    }
+
+    /// <summary>
+    /// Get remote access status
+    /// </summary>
+    private object GetRemoteAccessStatus()
+    {
+        var info = RemoteAccessService.Instance.GetConnectionInfo();
+        return new
+        {
+            enabled = info.IsEnabled,
+            localIP = info.LocalIP,
+            localPort = info.LocalPort,
+            publicIP = info.PublicIP,
+            publicPort = info.PublicPort,
+            connectionCode = info.ConnectionCode,
+            natType = info.NatType.ToString(),
+            directConnectionPossible = info.DirectConnectionPossible,
+            isRelayAvailable = info.IsRelayAvailable,
+            connectionUrl = info.ConnectionUrl,
+            qrCodeData = info.QrCodeData,
+            instructions = info.Instructions
+        };
+    }
+
+    /// <summary>
+    /// Validate a remote connection request
+    /// </summary>
+    private async Task<object> ValidateRemoteConnectionAsync(HttpListenerRequest request)
+    {
+        try
+        {
+            using var reader = new StreamReader(request.InputStream);
+            var body = await reader.ReadToEndAsync();
+            var data = JsonConvert.DeserializeAnonymousType(body, new { code = "" });
+
+            if (data == null || string.IsNullOrEmpty(data.code))
+            {
+                return new { success = false, error = "Connection code required" };
+            }
+
+            var info = RemoteAccessService.Instance.GetConnectionInfo();
+
+            if (!info.IsEnabled)
+            {
+                return new { success = false, error = "Remote access not enabled" };
+            }
+
+            if (data.code.ToUpper() != info.ConnectionCode)
+            {
+                return new { success = false, error = "Invalid connection code" };
+            }
+
+            return new
+            {
+                success = true,
+                message = "Connection validated",
+                apiPort = _port,
+                streamWsPort = StreamWsPort,
+                streamUdpPort = StreamUdpPort,
+                audioPort = AudioStreamPort,
+                hostname = Environment.MachineName
+            };
         }
         catch (Exception ex)
         {
