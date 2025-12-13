@@ -15,6 +15,7 @@ public class ApiServer
     private readonly GameScanner _gameScanner;
     private readonly SystemMonitor _systemMonitor;
     private readonly LowLatencyStreamService _streamService;
+    private readonly AudioStreamService _audioStreamService;
     private List<InstalledGame> _cachedGames = [];
     private DateTime _lastGameScan = DateTime.MinValue;
  private int _port = 19500;
@@ -24,9 +25,11 @@ public class ApiServer
     public const int DiscoveryPort = 5001;
     public const int StreamWsPort = 19501;
     public const int StreamUdpPort = 19502;
+    public const int AudioStreamPort = 19503;
     public const string DiscoveryMessage = "SYNKTRA_DISCOVER";
 
     public LowLatencyStreamService StreamService => _streamService;
+    public AudioStreamService AudioService => _audioStreamService;
     public bool IsRunning => _isRunning;
     public string? LastError => _lastError;
     public int Port => _port;
@@ -36,6 +39,7 @@ public ApiServer()
         _gameScanner = new GameScanner();
         _systemMonitor = new SystemMonitor();
         _streamService = new LowLatencyStreamService();
+        _audioStreamService = new AudioStreamService();
     }
 
     public async Task StartAsync(int port = 19500)
@@ -47,55 +51,111 @@ public ApiServer()
         var actualPort = await FindAvailablePortAsync(port);
         _port = actualPort;
         
-     Console.WriteLine($"[ApiServer] Requested port: {port}, Actual port: {_port}");
+        Console.WriteLine($"[ApiServer] Requested port: {port}, Actual port: {_port}");
 
-        _listener.Prefixes.Add($"http://*:{_port}/");
+     _listener.Prefixes.Add($"http://*:{_port}/");
 
         try
- {
-          _listener.Start();
-   _isRunning = true;
-            _lastError = null;
-   Console.WriteLine($"API Server started on port {_port}");
+        {
+            _listener.Start();
+     _isRunning = true;
+   _lastError = null;
+       Console.WriteLine($"API Server started on port {_port}");
 
-            StartDiscoveryServer();
+       StartDiscoveryServer();
 
- var settings = SettingsManager.Load();
+        // Apply GPU priority for better streaming performance
+            ApplyGpuPriority();
+
+     var settings = SettingsManager.Load();
      _streamService.SetQuality(settings.StreamQuality);
- _streamService.SetTargetFps(settings.StreamFps);
-    _streamService.SetResolution(settings.StreamWidth, settings.StreamHeight);
-      await _streamService.StartAsync(StreamWsPort, StreamUdpPort);
-            Console.WriteLine($"Stream server started on WS:{StreamWsPort}, UDP:{StreamUdpPort}");
+            _streamService.SetTargetFps(settings.StreamFps);
+            _streamService.SetResolution(settings.StreamWidth, settings.StreamHeight);
+    await _streamService.StartAsync(StreamWsPort, StreamUdpPort);
+      Console.WriteLine($"Video stream server started on WS:{StreamWsPort}, UDP:{StreamUdpPort}");
 
-  // Initialize virtual controller
-    InputSimulator.Instance.InitializeVirtualController();
-var controllerStatus = InputSimulator.Instance.GetControllerStatus();
-            if (controllerStatus.IsConnected)
-     {
-       Console.WriteLine("Virtual Xbox 360 controller connected - games will recognize controller input");
-        }
+            // Start audio streaming
+            await _audioStreamService.StartAsync(AudioStreamPort);
+      Console.WriteLine($"Audio stream server started on port {AudioStreamPort}");
+
+    // Initialize virtual controller
+       InputSimulator.Instance.InitializeVirtualController();
+ var controllerStatus = InputSimulator.Instance.GetControllerStatus();
+  if (controllerStatus.IsConnected)
+            {
+      Console.WriteLine("Virtual Xbox 360 controller connected - games will recognize controller input");
+    }
             else if (!controllerStatus.IsViGEmInstalled)
-    {
- Console.WriteLine("ViGEmBus not installed - using keyboard/mouse fallback for gamepad input");
-           Console.WriteLine("  Install ViGEmBus for full controller support: https://github.com/ViGEm/ViGEmBus/releases");
-     }
+  {
+      Console.WriteLine("ViGEmBus not installed - using keyboard/mouse fallback for gamepad input");
+                Console.WriteLine("  Install ViGEmBus for full controller support: https://github.com/ViGEm/ViGEmBus/releases");
+            }
 
-            _cachedGames = await _gameScanner.ScanAllGamesAsync();
-  _lastGameScan = DateTime.Now;
+    _cachedGames = await _gameScanner.ScanAllGamesAsync();
+       _lastGameScan = DateTime.Now;
 
-        _ = Task.Run(() => ListenAsync(_cts.Token));
+            _ = Task.Run(() => ListenAsync(_cts.Token));
         }
         catch (HttpListenerException ex) when (ex.ErrorCode == 5)
      {
-            _lastError = $"Access denied on port {_port}. Run as administrator or use a port above 1024.";
-  _isRunning = false;
-            Console.WriteLine(_lastError);
-        }
-     catch (Exception ex)
-        {
-   _lastError = $"Failed to start API server: {ex.Message}";
-     _isRunning = false;
+      _lastError = $"Access denied on port {_port}. Run as administrator or use a port above 1024.";
+       _isRunning = false;
+         Console.WriteLine(_lastError);
+     }
+        catch (Exception ex)
+    {
+            _lastError = $"Failed to start API server: {ex.Message}";
+_isRunning = false;
        Console.WriteLine(_lastError);
+        }
+    }
+
+    /// <summary>
+    /// Apply GPU priority settings for better streaming performance during gaming
+    /// </summary>
+    private void ApplyGpuPriority()
+    {
+        try
+    {
+            // Set process priority to high for better performance
+            var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
+            currentProcess.PriorityClass = System.Diagnostics.ProcessPriorityClass.High;
+            Console.WriteLine("Process priority set to High");
+
+   // Try to set GPU priority via registry (requires admin)
+            try
+            {
+        var exePath = Environment.ProcessPath ?? currentProcess.MainModule?.FileName;
+     if (!string.IsNullOrEmpty(exePath))
+     {
+          var exeName = Path.GetFileName(exePath);
+      var keyPath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\" + exeName + @"\PerfOptions";
+      
+          using var key = Microsoft.Win32.Registry.LocalMachine.CreateSubKey(keyPath);
+   if (key != null)
+   {
+    // GPU Priority: 8 = High
+  key.SetValue("GpuPriority", 8, Microsoft.Win32.RegistryValueKind.DWord);
+       // CPU Priority: 3 = High  
+    key.SetValue("CpuPriorityClass", 3, Microsoft.Win32.RegistryValueKind.DWord);
+  // IO Priority: 3 = High
+    key.SetValue("IoPriority", 3, Microsoft.Win32.RegistryValueKind.DWord);
+       Console.WriteLine("GPU/CPU/IO priority set in registry");
+  }
+      }
+            }
+     catch (UnauthorizedAccessException)
+            {
+                Console.WriteLine("Note: Run as admin to set GPU priority in registry");
+            }
+        catch (Exception ex)
+     {
+      Console.WriteLine($"GPU priority registry warning: {ex.Message}");
+       }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Priority settings warning: {ex.Message}");
         }
     }
 
@@ -197,26 +257,28 @@ try
 
            if (message == DiscoveryMessage || message.Contains("SYNKTRA"))
         {
-        var settings = SettingsManager.Load();
- var controllerStatus = InputSimulator.Instance.GetControllerStatus();
- var response = new DiscoveryResponse
-           {
-            Hostname = Environment.MachineName,
-Port = _port,
-     StreamWsPort = StreamWsPort,
-           StreamUdpPort = StreamUdpPort,
+           var settings = SettingsManager.Load();
+         var controllerStatus = InputSimulator.Instance.GetControllerStatus();
+   var response = new DiscoveryResponse
+    {
+   Hostname = Environment.MachineName,
+   Port = _port,
+   StreamWsPort = StreamWsPort,
+     StreamUdpPort = StreamUdpPort,
+  AudioStreamPort = AudioStreamPort,
     RequiresAuth = !string.IsNullOrEmpty(settings.AuthToken),
-                    Version = "1.0.0",
-           SupportsStreaming = true,
-   SupportsLowLatency = true,
-          SupportsVirtualController = controllerStatus.IsViGEmInstalled,
-  VirtualControllerActive = controllerStatus.IsConnected
-        };
+      Version = "1.0.0",
+    SupportsStreaming = true,
+ SupportsLowLatency = true,
+  SupportsAudio = true,
+   SupportsVirtualController = controllerStatus.IsViGEmInstalled,
+   VirtualControllerActive = controllerStatus.IsConnected
+      };
 
-              var responseBytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response));
-     await _discoveryServer.SendAsync(responseBytes, responseBytes.Length, result.RemoteEndPoint);
-     Console.WriteLine($"Discovery response sent to {result.RemoteEndPoint}");
-  }
+        var responseBytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response));
+       await _discoveryServer.SendAsync(responseBytes, responseBytes.Length, result.RemoteEndPoint);
+       Console.WriteLine($"Discovery response sent to {result.RemoteEndPoint}");
+     }
                 }
     catch (OperationCanceledException) { }
             }
@@ -236,12 +298,13 @@ Port = _port,
         _isRunning = false;
  
         // Release controller inputs and cleanup
-        InputSimulator.Instance.Shutdown();
+      InputSimulator.Instance.Shutdown();
         
         try { _cts?.Cancel(); } catch { }
-        try { _listener?.Stop(); _listener?.Close(); } catch { }
+     try { _listener?.Stop(); _listener?.Close(); } catch { }
         try { _discoveryServer?.Close(); _discoveryServer?.Dispose(); } catch { }
-    try { _streamService.Stop(); } catch { }
+        try { _streamService.Stop(); } catch { }
+        try { _audioStreamService.Stop(); } catch { }
 
         _listener = null;
         _discoveryServer = null;
@@ -322,21 +385,23 @@ await SendResponse(response, 401, new { error = "Unauthorized" });
        result = SystemRestart();
    else if (path == "/api/discover" && method == "GET")
         {
-         var controllerStatus = InputSimulator.Instance.GetControllerStatus();
-        result = new DiscoveryResponse
-      {
-   Hostname = Environment.MachineName,
- Port = _port,
-       StreamWsPort = StreamWsPort,
-    StreamUdpPort = StreamUdpPort,
-         RequiresAuth = !string.IsNullOrEmpty(settings.AuthToken),
+            var controllerStatus = InputSimulator.Instance.GetControllerStatus();
+   result = new DiscoveryResponse
+  {
+      Hostname = Environment.MachineName,
+      Port = _port,
+ StreamWsPort = StreamWsPort,
+StreamUdpPort = StreamUdpPort,
+         AudioStreamPort = AudioStreamPort,
+   RequiresAuth = !string.IsNullOrEmpty(settings.AuthToken),
   Version = "1.0.0",
-           SupportsStreaming = true,
-          SupportsLowLatency = true,
-            SupportsVirtualController = controllerStatus.IsViGEmInstalled,
-         VirtualControllerActive = controllerStatus.IsConnected
-     };
-     }
+    SupportsStreaming = true,
+      SupportsLowLatency = true,
+    SupportsAudio = true,
+        SupportsVirtualController = controllerStatus.IsViGEmInstalled,
+              VirtualControllerActive = controllerStatus.IsConnected
+            };
+        }
          else if (path == "/api/stream/start" && method == "POST")
      result = await StartStream(request);
   else if (path == "/api/stream/stop" && method == "POST")
@@ -760,10 +825,12 @@ public class DiscoveryResponse
     public int Port { get; set; }
     public int StreamWsPort { get; set; } = 19501;
     public int StreamUdpPort { get; set; } = 19502;
-    public bool RequiresAuth { get; set; }
+    public int AudioStreamPort { get; set; } = 19503;
+  public bool RequiresAuth { get; set; }
     public string Version { get; set; } = "1.0.0";
     public bool SupportsStreaming { get; set; }
     public bool SupportsLowLatency { get; set; }
-  public bool SupportsVirtualController { get; set; }
+    public bool SupportsAudio { get; set; }
+    public bool SupportsVirtualController { get; set; }
     public bool VirtualControllerActive { get; set; }
 }
