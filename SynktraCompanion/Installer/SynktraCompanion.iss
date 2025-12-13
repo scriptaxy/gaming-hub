@@ -24,6 +24,11 @@ DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 DisableProgramGroupPage=yes
 
+; UPGRADE SUPPORT - Use previous install location if upgrading
+UsePreviousAppDir=yes
+UsePreviousGroup=yes
+UsePreviousTasks=yes
+
 ; Output settings
 OutputDir=Output
 OutputBaseFilename=SynktraCompanion_Setup_{#MyAppVersion}
@@ -106,6 +111,7 @@ Type: filesandordirs; Name: "{localappdata}\SynktraCompanion"
 [Code]
 var
   ViGEmDownloadPage: TDownloadWizardPage;
+  ExistingVersion: String;
 
 function OnDownloadProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
 begin
@@ -114,9 +120,54 @@ begin
   Result := True;
 end;
 
+function GetExistingVersion: String;
+var
+  Version: String;
+begin
+  Result := '';
+  if RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8E9F4A2B-5C3D-4E6F-9A1B-2C3D4E5F6A7B}_is1', 'DisplayVersion', Version) then
+    Result := Version
+  else if RegQueryStringValue(HKCU, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8E9F4A2B-5C3D-4E6F-9A1B-2C3D4E5F6A7B}_is1', 'DisplayVersion', Version) then
+    Result := Version;
+end;
+
+function InitializeSetup: Boolean;
+var
+  Msg: String;
+begin
+  Result := True;
+  ExistingVersion := GetExistingVersion;
+  
+  if ExistingVersion <> '' then
+  begin
+    if ExistingVersion = '{#MyAppVersion}' then
+    begin
+    Msg := 'Synktra Companion version ' + ExistingVersion + ' is already installed.' + #13#10 + #13#10 +
+             'Do you want to repair/reinstall?';
+      Result := MsgBox(Msg, mbConfirmation, MB_YESNO) = IDYES;
+    end
+    else
+    begin
+      Msg := 'Synktra Companion version ' + ExistingVersion + ' is currently installed.' + #13#10 + #13#10 +
+      'This will upgrade to version {#MyAppVersion}.' + #13#10 + #13#10 +
+ 'Continue with upgrade?';
+      Result := MsgBox(Msg, mbConfirmation, MB_YESNO) = IDYES;
+    end;
+  end;
+end;
+
 procedure InitializeWizard;
 begin
   ViGEmDownloadPage := CreateDownloadPage(SetupMessage(msgWizardPreparing), SetupMessage(msgPreparingDesc), @OnDownloadProgress);
+  
+  // Show what's happening in the wizard
+  if ExistingVersion <> '' then
+  begin
+    if ExistingVersion = '{#MyAppVersion}' then
+      WizardForm.PageNameLabel.Caption := 'Repair/Reinstall'
+    else
+      WizardForm.PageNameLabel.Caption := 'Upgrade from ' + ExistingVersion + ' to {#MyAppVersion}';
+  end;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
