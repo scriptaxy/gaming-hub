@@ -267,7 +267,32 @@ Console.WriteLine("Streaming priority configured for smooth performance during g
     _height = Math.Clamp(height, 240, 1080);
     }
 
+    /// <summary>
+    /// Get list of available monitors
+    /// </summary>
+  public List<MonitorInfo> GetMonitors()
+    {
+        return _duplicator?.Monitors ?? new List<MonitorInfo>();
+    }
+
+    /// <summary>
+    /// Select which monitor to stream
+    /// </summary>
+    public void SelectMonitor(int monitorIndex)
+    {
+        _duplicator?.SelectMonitor(monitorIndex);
+        Console.WriteLine($"Switched to monitor {monitorIndex}");
+    }
+
   /// <summary>
+  /// Get currently selected monitor index
+    /// </summary>
+    public int GetSelectedMonitor()
+    {
+        return _duplicator?.SelectedMonitor ?? 0;
+    }
+
+    /// <summary>
     /// Set GPU resource allocation for streaming (0.0 to 1.0)
   /// Higher values = smoother streaming but may impact game performance
     /// Recommended: 0.2 - 0.3 (20-30%)
@@ -342,7 +367,7 @@ await _udpServer.SendAsync(ack, ack.Length, result.RemoteEndPoint);
        }
   else if (message.StartsWith("{"))
                 {
-      // Queue input command for batch processing
+      // Queue input command for batched processing
     try
       {
   var cmd = JsonConvert.DeserializeObject<InputCommand>(message);
@@ -824,6 +849,7 @@ int screenHeight = GetSystemMetrics(SM_CYSCREEN);
 
 /// <summary>
 /// Desktop Duplication API wrapper for fast GPU-based screen capture
+/// Supports multiple monitors
 /// </summary>
 public class DesktopDuplicator : IDisposable
 {
@@ -833,18 +859,26 @@ public class DesktopDuplicator : IDisposable
     private int _width;
     private int _height;
     private bool _initialized;
-    private int _consecutiveFailures = 0;
+   private int _consecutiveFailures = 0;
     private const int MaxFailuresBeforeReinit = 10;
+    private int _selectedMonitor = 0;
 
-    public DesktopDuplicator()
+    public int Width => _width;
+    public int Height => _height;
+    public int SelectedMonitor => _selectedMonitor;
+    public int MonitorCount { get; private set; }
+    public List<MonitorInfo> Monitors { get; private set; } = new();
+
+    public DesktopDuplicator(int monitorIndex = 0)
     {
-try
-        {
-            Initialize();
+        _selectedMonitor = monitorIndex;
+     try
+  {
+       Initialize();
         }
         catch (Exception ex)
         {
-       Console.WriteLine($"Desktop Duplication init failed (falling back to GDI): {ex.Message}");
+     Console.WriteLine($"Desktop Duplication init failed (falling back to GDI): {ex.Message}");
       _initialized = false;
       }
     }
@@ -852,45 +886,78 @@ try
     private void Initialize()
     {
         // Create D3D11 device with optimized flags
-        _device = new SharpDX.Direct3D11.Device(
- SharpDX.Direct3D.DriverType.Hardware,
-            SharpDX.Direct3D11.DeviceCreationFlags.BgraSupport);
+      _device = new SharpDX.Direct3D11.Device(
+         SharpDX.Direct3D.DriverType.Hardware,
+        SharpDX.Direct3D11.DeviceCreationFlags.BgraSupport);
 
-        // Get DXGI device
+  // Get DXGI device
         using var dxgiDevice = _device.QueryInterface<SharpDX.DXGI.Device>();
         using var adapter = dxgiDevice.GetParent<SharpDX.DXGI.Adapter>();
         using var factory = adapter.GetParent<SharpDX.DXGI.Factory1>();
 
-        // Get primary output (monitor)
-        using var output = adapter.GetOutput(0);
-      using var output1 = output.QueryInterface<SharpDX.DXGI.Output1>();
+      // Enumerate all monitors
+  Monitors.Clear();
+        MonitorCount = adapter.GetOutputCount();
+        for (int i = 0; i < MonitorCount; i++)
+        {
+       using var output = adapter.GetOutput(i);
+            var bounds = output.Description.DesktopBounds;
+        Monitors.Add(new MonitorInfo
+            {
+      Index = i,
+     Name = output.Description.DeviceName,
+      Width = bounds.Right - bounds.Left,
+             Height = bounds.Bottom - bounds.Top,
+             X = bounds.Left,
+        Y = bounds.Top,
+       IsPrimary = i == 0
+      });
+        }
+      Console.WriteLine($"Found {MonitorCount} monitor(s)");
 
-        var bounds = output.Description.DesktopBounds;
-        _width = bounds.Right - bounds.Left;
-        _height = bounds.Bottom - bounds.Top;
+        // Clamp selected monitor to valid range
+      _selectedMonitor = Math.Clamp(_selectedMonitor, 0, MonitorCount - 1);
 
- // Create staging texture for CPU access
-        var stagingDesc = new SharpDX.Direct3D11.Texture2DDescription
- {
-            Width = _width,
-            Height = _height,
-            MipLevels = 1,
+   // Get selected output (monitor)
+        using var selectedOutput = adapter.GetOutput(_selectedMonitor);
+      using var output1 = selectedOutput.QueryInterface<SharpDX.DXGI.Output1>();
+
+        var selectedBounds = selectedOutput.Description.DesktopBounds;
+       _width = selectedBounds.Right - selectedBounds.Left;
+ _height = selectedBounds.Bottom - selectedBounds.Top;
+
+       // Create staging texture for CPU access
+var stagingDesc = new SharpDX.Direct3D11.Texture2DDescription
+   {
+  Width = _width,
+     Height = _height,
+     MipLevels = 1,
  ArraySize = 1,
-  Format = SharpDX.DXGI.Format.B8G8R8A8_UNorm,
+ Format = SharpDX.DXGI.Format.B8G8R8A8_UNorm,
       SampleDescription = new SharpDX.DXGI.SampleDescription(1, 0),
    Usage = SharpDX.Direct3D11.ResourceUsage.Staging,
     BindFlags = SharpDX.Direct3D11.BindFlags.None,
             CpuAccessFlags = SharpDX.Direct3D11.CpuAccessFlags.Read,
      OptionFlags = SharpDX.Direct3D11.ResourceOptionFlags.None
-        };
-        _stagingTexture = new SharpDX.Direct3D11.Texture2D(_device, stagingDesc);
+    };
+    _stagingTexture = new SharpDX.Direct3D11.Texture2D(_device, stagingDesc);
 
-        // Duplicate output
+     // Duplicate output
         _duplicatedOutput = output1.DuplicateOutput(_device);
-        _initialized = true;
-        _consecutiveFailures = 0;
+    _initialized = true;
+    _consecutiveFailures = 0;
 
-   Console.WriteLine($"Desktop Duplication initialized: {_width}x{_height}");
+        Console.WriteLine($"Desktop Duplication initialized: Monitor {_selectedMonitor} ({_width}x{_height})");
+    }
+
+  /// <summary>
+    /// Switch to a different monitor
+    /// </summary>
+    public void SelectMonitor(int monitorIndex)
+    {
+   if (monitorIndex == _selectedMonitor && _initialized) return;
+        _selectedMonitor = monitorIndex;
+        Reinitialize();
     }
 
     public Bitmap? CaptureFrame()
@@ -1011,4 +1078,18 @@ try
         _device = null;
    _initialized = false;
     }
+}
+
+/// <summary>
+/// Information about a connected monitor
+/// </summary>
+public class MonitorInfo
+{
+    public int Index { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public int X { get; set; }
+    public int Y { get; set; }
+    public bool IsPrimary { get; set; }
 }
