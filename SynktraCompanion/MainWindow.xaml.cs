@@ -222,17 +222,22 @@ ToastNotification.BeginAnimation(OpacityProperty, fadeIn);
     
     private void MaxBtn_Click(object sender, RoutedEventArgs e)
     {
-   if (WindowState == WindowState.Maximized)
-      {
-         WindowState = WindowState.Normal;
- }
-      else
- {
+        if (WindowState == WindowState.Maximized)
+    {
+ WindowState = WindowState.Normal;
+            // Reset max constraints
+            MaxHeight = double.PositiveInfinity;
+          MaxWidth = double.PositiveInfinity;
+        }
+        else
+        {
             // Get the working area (excludes taskbar)
- var screen = System.Windows.SystemParameters.WorkArea;
-            MaxHeight = screen.Height;
-       MaxWidth = screen.Width;
-  WindowState = WindowState.Maximized;
+       var workArea = SystemParameters.WorkArea;
+       MaxHeight = workArea.Height;
+            MaxWidth = workArea.Width;
+   Left = workArea.Left;
+            Top = workArea.Top;
+         WindowState = WindowState.Maximized;
         }
     }
     
@@ -337,24 +342,34 @@ StreamLatencyText.Text = $"{streamService.TotalLatency:0}ms";
     }
 
     private void UpdateNetworkInfo()
-  {
-   try
+    {
+        try
         {
-    var port = _apiServer.IsRunning ? _apiServer.Port : SettingsManager.Load().Port;
-        var host = Dns.GetHostEntry(Dns.GetHostName());
-  foreach (var ip in host.AddressList)
+          // Get the actual port from the running server
+ var port = _apiServer.Port;
+            if (port == 0)
+      port = 19500;
+  
+            var host = Dns.GetHostEntry(Dns.GetHostName());
+            foreach (var ip in host.AddressList)
         {
-                if (ip.AddressFamily == AddressFamily.InterNetwork)
-       {
-           IpAddressText.Text = $"{ip}:{port}";
-       LocalIpDisplay.Text = ip.ToString();
-       ApiPortDisplay.Text = port.ToString();
-return;
-     }
+         if (ip.AddressFamily == AddressFamily.InterNetwork)
+ {
+      IpAddressText.Text = $"{ip}:{port}";
+        LocalIpDisplay.Text = ip.ToString();
+     ApiPortDisplay.Text = port.ToString();
+            return;
+      }
             }
-        }
-        catch { }
-        IpAddressText.Text = $"0.0.0.0:{_apiServer.Port}";
+ // Fallback if no IPv4 found
+    IpAddressText.Text = $"localhost:{port}";
+            LocalIpDisplay.Text = "localhost";
+            ApiPortDisplay.Text = port.ToString();
+  }
+ catch
+ {
+            IpAddressText.Text = $"localhost:{_apiServer.Port}";
+    }
     }
 
     private void UpdatePlatformStats()

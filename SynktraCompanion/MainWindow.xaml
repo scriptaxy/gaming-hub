@@ -5,13 +5,11 @@
         Title="Synktra Companion" Height="720" Width="1100"
         MinHeight="600" MinWidth="900" WindowStartupLocation="CenterScreen"
         Background="{StaticResource BgBrush}" ResizeMode="CanResizeWithGrip"
-        WindowStyle="None" AllowsTransparency="False"
-        MaxHeight="{Binding Source={x:Static SystemParameters.MaximizedPrimaryScreenHeight}}"
-        MaxWidth="{Binding Source={x:Static SystemParameters.MaximizedPrimaryScreenWidth}}"
-        Icon="app.ico">
+      WindowStyle="None" AllowsTransparency="False"
+   Icon="app.ico">
     <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="40" ResizeBorderThickness="5" GlassFrameThickness="0" CornerRadius="0" NonClientFrameEdges="None"/>
-  </WindowChrome.WindowChrome>
+  <WindowChrome CaptionHeight="40" ResizeBorderThickness="5" GlassFrameThickness="0" CornerRadius="0"/>
+    </WindowChrome.WindowChrome>
     
     <Grid>
         <Grid.RowDefinitions>
