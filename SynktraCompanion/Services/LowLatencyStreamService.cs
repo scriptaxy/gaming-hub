@@ -90,6 +90,10 @@ private float _gpuResourceAllocation = 0.25f;
     private ImageCodecInfo? _jpegEncoder;
     private EncoderParameters? _encoderParams;
 
+    // Input queue for batched processing
+    private readonly ConcurrentQueue<InputCommand> _inputQueue = new();
+    private Thread? _inputProcessorThread;
+
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int nIndex);
     private const int SM_CXSCREEN = 0;
@@ -709,11 +713,239 @@ _recentFps.Enqueue(_fps);
     /// </summary>
     public void SetAdaptiveBitrate(bool enabled)
     {
-        _adaptiveBitrate = enabled;
-      Console.WriteLine($"Adaptive bitrate: {(enabled ? "enabled" : "disabled")}");
+    _adaptiveBitrate = enabled;
+Console.WriteLine($"Adaptive bitrate: {(enabled ? "enabled" : "disabled")}");
+    }
+
+    /// <summary>
+    /// Enable/disable hardware encoding (NVENC/AMF/QuickSync)
+    /// </summary>
+    public async Task<bool> SetHardwareEncodingAsync(bool enabled)
+    {
+        _useHardwareEncoder = enabled;
+        
+        if (enabled && _hwEncoder == null)
+  {
+    _hwEncoder = HardwareEncoderService.Instance;
+  var initialized = await _hwEncoder.InitializeAsync(_width, _height, _targetFps, 8000);
+        if (initialized)
+ {
+     Console.WriteLine($"Hardware encoding enabled: {_hwEncoder.EncoderName}");
+  return true;
+            }
+ else
+            {
+         Console.WriteLine("Hardware encoding not available, using software encoding");
+     _useHardwareEncoder = false;
+ return false;
+ }
+        }
+        else if (!enabled && _hwEncoder != null)
+        {
+ _hwEncoder.StopEncoding();
+    Console.WriteLine("Hardware encoding disabled, using software JPEG");
+    }
+        
+        return enabled;
+    }
+
+    /// <summary>
+    /// Get current encoder info
+    /// </summary>
+    public string GetEncoderInfo()
+    {
+        if (_useHardwareEncoder && _hwEncoder?.IsInitialized == true)
+        {
+            return $"Hardware: {_hwEncoder.EncoderName}";
+        }
+        return "Software: JPEG";
+    }
+
+    private byte[]? CaptureAndEncodeFrame()
+    {
+        Bitmap? frame = null;
+     try
+ {
+            // Try Desktop Duplication first (faster, GPU-accelerated)
+     var captureStart = Stopwatch.GetTimestamp();
+      frame = _duplicator?.CaptureFrame();
+
+         if (frame == null)
+            {
+     // Fallback to GDI capture
+     frame = CaptureWithGdi();
+   }
+
+       if (frame == null) return null;
+
+      _lastCaptureMs = (Stopwatch.GetTimestamp() - captureStart) * 1000.0 / Stopwatch.Frequency;
+
+         // Resize if needed
+ Bitmap? resizedFrame = null;
+            if (frame.Width != _width || frame.Height != _height)
+    {
+        resizedFrame = ResizeFast(frame, _width, _height);
+   frame.Dispose();
+                frame = resizedFrame;
+         }
+
+       // Encode
+     var encodeStart = Stopwatch.GetTimestamp();
+     byte[] encoded;
+
+   lock (_encodeLock)
+            {
+     _encodeBuffer ??= new MemoryStream(512 * 1024);
+   _encodeBuffer.SetLength(0);
+
+       // Use JPEG encoding (fast and widely supported)
+ frame.Save(_encodeBuffer, _jpegEncoder!, _encoderParams);
+   encoded = _encodeBuffer.ToArray();
+   }
+
+     _lastEncodeMs = (Stopwatch.GetTimestamp() - encodeStart) * 1000.0 / Stopwatch.Frequency;
+            _bytesSent += encoded.Length;
+
+       return encoded;
+      }
+     catch (Exception ex)
+        {
+         Console.WriteLine($"Capture/encode error: {ex.Message}");
+       return null;
+        }
+        finally
+        {
+    frame?.Dispose();
+        }
+ }
+
+    private Bitmap ResizeFast(Bitmap source, int width, int height)
+    {
+        var dest = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+ using var g = Graphics.FromImage(dest);
+     g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighSpeed;
+        g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
+        g.DrawImage(source, 0, 0, width, height);
+   return dest;
+    }
+
+    private Bitmap? CaptureWithGdi()
+    {
+        try
+        {
+     int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+            int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+
+  var bitmap = new Bitmap(screenWidth, screenHeight, PixelFormat.Format24bppRgb);
+          using var graphics = Graphics.FromImage(bitmap);
+      graphics.CopyFromScreen(0, 0, 0, 0, bitmap.Size, CopyPixelOperation.SourceCopy);
+   return bitmap;
+        }
+        catch
+        {
+            return null;
+ }
+    }
+
+    private void BroadcastFrameSync(byte[] frameData)
+    {
+        var sendStart = Stopwatch.GetTimestamp();
+
+   // Send to UDP clients
+        List<IPEndPoint> udpClientsCopy;
+      lock (_clientsLock)
+        {
+  udpClientsCopy = [.. _udpClients];
+        }
+
+        if (_useUdp && udpClientsCopy.Count > 0 && _udpServer != null)
+        {
+   SendFragmentedUdp(frameData, udpClientsCopy);
+        }
+
+   // Send to WebSocket clients
+   List<WebSocket> wsClientsCopy;
+   lock (_clientsLock)
+        {
+            wsClientsCopy = [.. _wsClients];
+        }
+
+        var deadClients = new List<WebSocket>();
+        foreach (var ws in wsClientsCopy)
+        {
+   try
+       {
+                if (ws.State == WebSocketState.Open)
+     {
+       ws.SendAsync(
+                    new ArraySegment<byte>(frameData),
+       WebSocketMessageType.Binary,
+            true,
+     CancellationToken.None).Wait(50);
+                }
+    else
+                {
+deadClients.Add(ws);
+      }
+ }
+    catch
+          {
+          deadClients.Add(ws);
+        }
+        }
+
+      // Clean up dead clients
+        if (deadClients.Count > 0)
+        {
+  lock (_clientsLock)
+    {
+     foreach (var dead in deadClients)
+        {
+        _wsClients.Remove(dead);
+    }
+          }
+        }
+
+     _lastSendMs = (Stopwatch.GetTimestamp() - sendStart) * 1000.0 / Stopwatch.Frequency;
+    }
+
+    private void SendFragmentedUdp(byte[] frameData, List<IPEndPoint> clients)
+    {
+   const int MaxUdpPayload = 65000; // Leave room for headers
+        const int HeaderSize = 12; // frameId(4) + fragmentIndex(2) + totalFragments(2) + dataSize(4)
+        const int MaxDataPerPacket = MaxUdpPayload - HeaderSize;
+
+        var frameId = (uint)(DateTime.Now.Ticks & 0xFFFFFFFF);
+        var totalFragments = (ushort)((frameData.Length + MaxDataPerPacket - 1) / MaxDataPerPacket);
+
+  for (ushort i = 0; i < totalFragments; i++)
+        {
+            var offset = i * MaxDataPerPacket;
+      var length = Math.Min(MaxDataPerPacket, frameData.Length - offset);
+
+            // Build packet: [frameId:4][fragmentIndex:2][totalFragments:2][dataSize:4][data:N]
+            var packet = new byte[HeaderSize + length];
+            BitConverter.GetBytes(frameId).CopyTo(packet, 0);
+        BitConverter.GetBytes(i).CopyTo(packet, 4);
+     BitConverter.GetBytes(totalFragments).CopyTo(packet, 6);
+            BitConverter.GetBytes(length).CopyTo(packet, 8);
+    Array.Copy(frameData, offset, packet, HeaderSize, length);
+
+   foreach (var client in clients)
+    {
+     try
+     {
+     _udpServer?.Send(packet, packet.Length, client);
+      }
+            catch
+                {
+  // Client may have disconnected
+      }
+            }
+ }
     }
 }
-
 /// <summary>
 /// Desktop Duplication API wrapper for fast GPU-based screen capture
 /// Supports multiple monitors
