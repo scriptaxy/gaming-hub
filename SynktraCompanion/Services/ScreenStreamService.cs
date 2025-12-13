@@ -108,7 +108,7 @@ _isStreaming = true;
 
     public void SetResolution(int width, int height)
     {
-        _resolution = new Size(Math.Clamp(width, 320, 1920), Math Clamp(height, 240, 1080));
+  _resolution = new Size(Math.Clamp(width, 320, 1920), Math.Clamp(height, 240, 1080));
     }
 
     private async Task AcceptConnectionsAsync(CancellationToken ct)

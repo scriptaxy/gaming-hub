@@ -146,9 +146,10 @@ var controllerStatus = InputSimulator.Instance.GetControllerStatus();
 
       Console.WriteLine($"Discovery server started on UDP port {DiscoveryPort}");
     foreach (var ip in GetLocalIPAddresses())
-   {
-                Console.WriteLine($"  Listening on: {ip}:{DiscoveryPort}")
-    }
+         {
+      Console.WriteLine($"  Listening on: {ip}:{DiscoveryPort}");
+      }
+
         }
 catch (Exception ex)
         {
