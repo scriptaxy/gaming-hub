@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Net.Http;
 using Nefarius.ViGEm.Client;
 using Nefarius.ViGEm.Client.Targets;
@@ -37,7 +38,7 @@ public class VirtualControllerService : IDisposable
 
     /// <summary>
  /// Whether virtual controller emulation is enabled (vs keyboard/mouse fallback)
-    /// </summary>
+ /// </summary>
     public bool IsEnabled
     {
         get => _isEnabled;
@@ -81,7 +82,7 @@ public class VirtualControllerService : IDisposable
 
     /// <summary>
 /// Check if ViGEmBus driver is installed
-    /// </summary>
+/// </summary>
   private void CheckViGEmAvailability()
     {
      try
