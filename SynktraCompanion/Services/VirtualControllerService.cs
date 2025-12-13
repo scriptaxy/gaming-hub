@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO;
 using System.Net.Http;
 using Nefarius.ViGEm.Client;
 using Nefarius.ViGEm.Client.Targets;
@@ -15,22 +14,20 @@ namespace SynktraCompanion.Services;
 public class VirtualControllerService : IDisposable
 {
     private static VirtualControllerService? _instance;
-    public static VirtualControllerService Instance => _instance ??= new VirtualControllerService();
+  public static VirtualControllerService Instance => _instance ??= new VirtualControllerService();
 
     private ViGEmClient? _client;
     private IXbox360Controller? _controller;
     private bool _isConnected;
     private bool _isEnabled = true;
     private bool _vigemAvailable;
-    private string? _lastError;
+  private string? _lastError;
     private bool _isInstallingDriver;
 
     // ViGEmBus download URL (latest stable release)
-    private const string ViGEmBusDownloadUrl = "https://github.com/nefarius/ViGEmBus/releases/download/v1.22.0/ViGEmBus_1.22.0_x64_x86_arm64.exe";
+    private const string ViGEmBusDownloadUrl = "https://github.com/nefarius/ViGEmBus/releases/download/v1.24.0/ViGEmBus_1.24.0_x64_x86_arm64.exe";
     private const string ViGEmBusInstallerName = "ViGEmBus_Setup.exe";
 
-    // Controller state cache for efficient updates
-    private Xbox360Report _currentReport = new();
     private readonly object _stateLock = new();
 
     /// <summary>
@@ -39,28 +36,28 @@ public class VirtualControllerService : IDisposable
     public bool IsConnected => _isConnected && _controller != null;
 
     /// <summary>
-  /// Whether virtual controller emulation is enabled (vs keyboard/mouse fallback)
+ /// Whether virtual controller emulation is enabled (vs keyboard/mouse fallback)
     /// </summary>
     public bool IsEnabled
     {
         get => _isEnabled;
- set
+        set
         {
-          _isEnabled = value;
+            _isEnabled = value;
  if (value && _vigemAvailable && !_isConnected)
-   {
-         Connect();
- }
-            else if (!value && _isConnected)
             {
-                Disconnect();
+        Connect();
             }
+         else if (!value && _isConnected)
+       {
+              Disconnect();
+      }
         }
     }
 
     /// <summary>
     /// Whether ViGEmBus driver is available on the system
-/// </summary>
+    /// </summary>
     public bool IsViGEmAvailable => _vigemAvailable;
 
     /// <summary>
@@ -79,222 +76,220 @@ public class VirtualControllerService : IDisposable
 
     private VirtualControllerService()
     {
-     CheckViGEmAvailability();
+      CheckViGEmAvailability();
     }
 
     /// <summary>
-    /// Check if ViGEmBus driver is installed
+/// Check if ViGEmBus driver is installed
     /// </summary>
-    private void CheckViGEmAvailability()
+  private void CheckViGEmAvailability()
     {
-        try
+     try
         {
-            _client = new ViGEmClient();
-            _vigemAvailable = true;
-   Console.WriteLine("ViGEmBus driver detected - virtual controller support available");
+    _client = new ViGEmClient();
+   _vigemAvailable = true;
+Console.WriteLine("ViGEmBus driver detected - virtual controller support available");
         }
         catch (Nefarius.ViGEm.Client.Exceptions.VigemBusNotFoundException)
         {
-      _vigemAvailable = false;
-  _lastError = "ViGEmBus driver not installed. Click 'Install Driver' to set it up automatically.";
-     Console.WriteLine($"ViGEmBus not found: {_lastError}");
+    _vigemAvailable = false;
+ _lastError = "ViGEmBus driver not installed. Click 'Install Driver' to set it up automatically.";
+            Console.WriteLine($"ViGEmBus not found: {_lastError}");
         }
-    catch (Exception ex)
+        catch (Exception ex)
         {
-            _vigemAvailable = false;
-    _lastError = $"ViGEmBus initialization failed: {ex.Message}";
-            Console.WriteLine(_lastError);
-   }
+_vigemAvailable = false;
+      _lastError = $"ViGEmBus initialization failed: {ex.Message}";
+      Console.WriteLine(_lastError);
+        }
     }
 
     /// <summary>
     /// Download and install ViGEmBus driver automatically
- /// </summary>
+    /// </summary>
     public async Task<bool> InstallViGEmBusAsync()
     {
   if (_vigemAvailable)
-    {
-     OnInstallProgress?.Invoke("ViGEmBus is already installed!");
-    return true;
-        }
-
- if (_isInstallingDriver)
   {
+            OnInstallProgress?.Invoke("ViGEmBus is already installed!");
+            return true;
+   }
+
+     if (_isInstallingDriver)
+        {
             OnInstallProgress?.Invoke("Installation already in progress...");
- return false;
+         return false;
         }
 
         _isInstallingDriver = true;
 
-   try
-        {
-            var tempPath = Path.Combine(Path.GetTempPath(), ViGEmBusInstallerName);
+  try
+ {
+   var tempPath = Path.Combine(Path.GetTempPath(), ViGEmBusInstallerName);
 
-  // Download the installer
-OnInstallProgress?.Invoke("Downloading ViGEmBus driver...");
-    Console.WriteLine($"Downloading ViGEmBus from {ViGEmBusDownloadUrl}");
+       // Download the installer
+    OnInstallProgress?.Invoke("Downloading ViGEmBus driver...");
+       Console.WriteLine($"Downloading ViGEmBus from {ViGEmBusDownloadUrl}");
 
             using var httpClient = new HttpClient();
-       httpClient.Timeout = TimeSpan.FromMinutes(5);
-            
-     var response = await httpClient.GetAsync(ViGEmBusDownloadUrl, HttpCompletionOption.ResponseHeadersRead);
-     response.EnsureSuccessStatusCode();
+          httpClient.Timeout = TimeSpan.FromMinutes(5);
+
+   var response = await httpClient.GetAsync(ViGEmBusDownloadUrl, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
 
     var totalBytes = response.Content.Headers.ContentLength ?? 0;
-    var buffer = new byte[8192];
-     var bytesRead = 0L;
+  var buffer = new byte[8192];
+   var bytesRead = 0L;
 
-   await using var contentStream = await response.Content.ReadAsStreamAsync();
- await using var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
+        await using var contentStream = await response.Content.ReadAsStreamAsync();
+            await using var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
 
-            int read;
+        int read;
         while ((read = await contentStream.ReadAsync(buffer)) > 0)
-       {
-                await fileStream.WriteAsync(buffer.AsMemory(0, read));
+            {
+        await fileStream.WriteAsync(buffer.AsMemory(0, read));
     bytesRead += read;
 
-     if (totalBytes > 0)
-        {
-          var progress = (int)((bytesRead * 100) / totalBytes);
-         OnInstallProgress?.Invoke($"Downloading... {progress}%");
-       }
-        }
+        if (totalBytes > 0)
+     {
+        var progress = (int)((bytesRead * 100) / totalBytes);
+     OnInstallProgress?.Invoke($"Downloading... {progress}%");
+    }
+    }
 
-      OnInstallProgress?.Invoke("Download complete. Starting installation...");
-   Console.WriteLine($"Downloaded to {tempPath}");
+            OnInstallProgress?.Invoke("Download complete. Starting installation...");
+            Console.WriteLine($"Downloaded to {tempPath}");
 
-       // Run the installer silently
-      OnInstallProgress?.Invoke("Installing ViGEmBus driver (may require admin approval)...");
-     
+        // Run the installer silently
+   OnInstallProgress?.Invoke("Installing ViGEmBus driver (may require admin approval)...");
+
             var processInfo = new ProcessStartInfo
-            {
+  {
     FileName = tempPath,
-       Arguments = "/passive /norestart", // Silent install, no restart prompt
-   UseShellExecute = true,
-       Verb = "runas" // Request admin elevation
-    };
+             Arguments = "/passive /norestart",
+         UseShellExecute = true,
+                Verb = "runas"
+         };
 
-         using var process = Process.Start(processInfo);
-         if (process == null)
-            {
-   throw new Exception("Failed to start installer");
-        }
+      using var process = Process.Start(processInfo);
+ if (process == null)
+     {
+    throw new Exception("Failed to start installer");
+   }
 
-   await process.WaitForExitAsync();
+      await process.WaitForExitAsync();
 
             // Clean up installer
-   try { File.Delete(tempPath); } catch { }
+            try { File.Delete(tempPath); } catch { }
 
-   if (process.ExitCode == 0 || process.ExitCode == 3010) // 3010 = success, restart required
-{
-          OnInstallProgress?.Invoke("Installation successful! Initializing driver...");
-           
-     // Wait a moment for driver to initialize
+  if (process.ExitCode == 0 || process.ExitCode == 3010)
+       {
+     OnInstallProgress?.Invoke("Installation successful! Initializing driver...");
+
   await Task.Delay(2000);
-        
-     // Re-check availability
-          CheckViGEmAvailability();
 
-      if (_vigemAvailable)
-         {
-          OnInstallProgress?.Invoke("ViGEmBus driver ready! Virtual controller available.");
-          Connect();
-         return true;
-       }
-          else
-         {
- OnInstallProgress?.Invoke("Driver installed but may require a restart to activate.");
-        _lastError = "Please restart your computer to complete ViGEmBus installation.";
-             return false;
-        }
-   }
-            else if (process.ExitCode == 1602) // User cancelled
-     {
-       OnInstallProgress?.Invoke("Installation cancelled by user.");
-     _lastError = "Installation was cancelled.";
-      return false;
+                CheckViGEmAvailability();
+
+                if (_vigemAvailable)
+                {
+        OnInstallProgress?.Invoke("ViGEmBus driver ready! Virtual controller available.");
+      Connect();
+        return true;
+     }
+           else
+                {
+     OnInstallProgress?.Invoke("Driver installed but may require a restart to activate.");
+     _lastError = "Please restart your computer to complete ViGEmBus installation.";
+    return false;
+                }
             }
-   else
-          {
-        OnInstallProgress?.Invoke($"Installation failed with code {process.ExitCode}");
-          _lastError = $"Installation failed (exit code: {process.ExitCode})";
-             return false;
+         else if (process.ExitCode == 1602)
+{
+      OnInstallProgress?.Invoke("Installation cancelled by user.");
+             _lastError = "Installation was cancelled.";
+   return false;
       }
+            else
+          {
+      OnInstallProgress?.Invoke($"Installation failed with code {process.ExitCode}");
+                _lastError = $"Installation failed (exit code: {process.ExitCode})";
+      return false;
+   }
         }
         catch (HttpRequestException ex)
         {
             _lastError = $"Download failed: {ex.Message}";
+         OnInstallProgress?.Invoke(_lastError);
+ Console.WriteLine(_lastError);
+  return false;
+     }
+    catch (Exception ex) when (ex.Message.Contains("cancelled") || ex.Message.Contains("elevation"))
+        {
+  _lastError = "Administrator permission required to install driver.";
       OnInstallProgress?.Invoke(_lastError);
             Console.WriteLine(_lastError);
-   return false;
-    }
-   catch (Exception ex) when (ex.Message.Contains("cancelled") || ex.Message.Contains("elevation"))
-      {
-         _lastError = "Administrator permission required to install driver.";
-            OnInstallProgress?.Invoke(_lastError);
-    Console.WriteLine(_lastError);
             return false;
         }
         catch (Exception ex)
-        {
-            _lastError = $"Installation error: {ex.Message}";
-            OnInstallProgress?.Invoke(_lastError);
-            Console.WriteLine(_lastError);
+ {
+     _lastError = $"Installation error: {ex.Message}";
+         OnInstallProgress?.Invoke(_lastError);
+    Console.WriteLine(_lastError);
             return false;
         }
         finally
-     {
-     _isInstallingDriver = false;
-        }
+        {
+       _isInstallingDriver = false;
+   }
     }
 
     /// <summary>
     /// Open the ViGEmBus GitHub releases page for manual download
-    /// </summary>
+ /// </summary>
     public void OpenViGEmDownloadPage()
     {
-        try
+  try
         {
-        Process.Start(new ProcessStartInfo
-  {
-     FileName = "https://github.com/ViGEm/ViGEmBus/releases",
-    UseShellExecute = true
-    });
-   }
-      catch (Exception ex)
-    {
-      Console.WriteLine($"Failed to open browser: {ex.Message}");
-}
-    }
+            Process.Start(new ProcessStartInfo
+   {
+                FileName = "https://github.com/ViGEm/ViGEmBus/releases",
+       UseShellExecute = true
+     });
+ }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to open browser: {ex.Message}");
+        }
+ }
 
     /// <summary>
     /// Connect and plug in the virtual controller
-  /// </summary>
+    /// </summary>
     public bool Connect()
-    {
+ {
         if (_isConnected) return true;
-        if (!_vigemAvailable || !_isEnabled) return false;
+ if (!_vigemAvailable || !_isEnabled) return false;
 
         try
-    {
+ {
             _client ??= new ViGEmClient();
-   _controller = _client.CreateXbox360Controller();
-          _controller.Connect();
+            _controller = _client.CreateXbox360Controller();
+     _controller.Connect();
 
-            _isConnected = true;
-            _lastError = null;
+          _isConnected = true;
+   _lastError = null;
 
-    Console.WriteLine("Virtual Xbox 360 controller connected");
-     OnConnectionChanged?.Invoke(true);
-            return true;
-        }
- catch (Exception ex)
+            Console.WriteLine("Virtual Xbox 360 controller connected");
+       OnConnectionChanged?.Invoke(true);
+     return true;
+      }
+        catch (Exception ex)
         {
-         _lastError = $"Failed to connect virtual controller: {ex.Message}";
-       Console.WriteLine(_lastError);
-     OnError?.Invoke(_lastError);
-     return false;
-  }
+      _lastError = $"Failed to connect virtual controller: {ex.Message}";
+   Console.WriteLine(_lastError);
+   OnError?.Invoke(_lastError);
+        return false;
+        }
     }
 
     /// <summary>
@@ -302,21 +297,21 @@ OnInstallProgress?.Invoke("Downloading ViGEmBus driver...");
     /// </summary>
     public void Disconnect()
     {
-     if (!_isConnected) return;
+        if (!_isConnected) return;
 
-   try
+        try
         {
-       _controller?.Disconnect();
+   _controller?.Disconnect();
             _controller = null;
-            _isConnected = false;
+  _isConnected = false;
 
             Console.WriteLine("Virtual Xbox 360 controller disconnected");
-       OnConnectionChanged?.Invoke(false);
-        }
+         OnConnectionChanged?.Invoke(false);
+     }
         catch (Exception ex)
         {
-         Console.WriteLine($"Error disconnecting virtual controller: {ex.Message}");
-        }
+            Console.WriteLine($"Error disconnecting virtual controller: {ex.Message}");
+}
     }
 
     /// <summary>
@@ -326,31 +321,54 @@ OnInstallProgress?.Invoke("Downloading ViGEmBus driver...");
     {
         if (!_isConnected || _controller == null) return;
 
-  try
-        {
-        lock (_stateLock)
-        {
-        // Convert analog stick values (-1 to 1) to Xbox 360 range (-32768 to 32767)
-_currentReport.LeftThumbX = (short)(cmd.LeftStickX * short.MaxValue);
-       _currentReport.LeftThumbY = (short)(-cmd.LeftStickY * short.MaxValue); // Invert Y for Xbox convention
-      _currentReport.RightThumbX = (short)(cmd.RightStickX * short.MaxValue);
-                _currentReport.RightThumbY = (short)(-cmd.RightStickY * short.MaxValue);
+        try
+    {
+            lock (_stateLock)
+   {
+     // Set analog sticks (values are -1 to 1, need to convert to short range)
+    _controller.SetAxisValue(Xbox360Axis.LeftThumbX, (short)(cmd.LeftStickX * short.MaxValue));
+    _controller.SetAxisValue(Xbox360Axis.LeftThumbY, (short)(-cmd.LeftStickY * short.MaxValue));
+ _controller.SetAxisValue(Xbox360Axis.RightThumbX, (short)(cmd.RightStickX * short.MaxValue));
+          _controller.SetAxisValue(Xbox360Axis.RightThumbY, (short)(-cmd.RightStickY * short.MaxValue));
 
-         // Convert trigger values (0 to 1) to Xbox 360 range (0 to 255)
-      _currentReport.LeftTrigger = (byte)(cmd.LeftTrigger * 255);
-     _currentReport.RightTrigger = (byte)(cmd.RightTrigger * 255);
+                // Set triggers (values are 0 to 1, need to convert to byte range)
+    _controller.SetSliderValue(Xbox360Slider.LeftTrigger, (byte)(cmd.LeftTrigger * 255));
+    _controller.SetSliderValue(Xbox360Slider.RightTrigger, (byte)(cmd.RightTrigger * 255));
 
-         // Convert button flags
-      _currentReport.Buttons = ConvertButtons(cmd.Buttons);
+    // Set buttons
+ SetButtons(cmd.Buttons);
 
-    // Submit the report
-      _controller.SubmitReport(_currentReport);
-            }
-    }
+     // Submit the report
+          _controller.SubmitReport();
+       }
+     }
         catch (Exception ex)
-  {
+        {
             Console.WriteLine($"Error updating virtual controller: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Set button states on the controller
+ /// </summary>
+    private void SetButtons(GamepadButtons buttons)
+    {
+        if (_controller == null) return;
+
+        _controller.SetButtonState(Xbox360Button.A, (buttons & GamepadButtons.A) != 0);
+        _controller.SetButtonState(Xbox360Button.B, (buttons & GamepadButtons.B) != 0);
+   _controller.SetButtonState(Xbox360Button.X, (buttons & GamepadButtons.X) != 0);
+        _controller.SetButtonState(Xbox360Button.Y, (buttons & GamepadButtons.Y) != 0);
+        _controller.SetButtonState(Xbox360Button.LeftShoulder, (buttons & GamepadButtons.LeftBumper) != 0);
+        _controller.SetButtonState(Xbox360Button.RightShoulder, (buttons & GamepadButtons.RightBumper) != 0);
+        _controller.SetButtonState(Xbox360Button.Back, (buttons & GamepadButtons.Back) != 0);
+        _controller.SetButtonState(Xbox360Button.Start, (buttons & GamepadButtons.Start) != 0);
+        _controller.SetButtonState(Xbox360Button.LeftThumb, (buttons & GamepadButtons.LeftStick) != 0);
+        _controller.SetButtonState(Xbox360Button.RightThumb, (buttons & GamepadButtons.RightStick) != 0);
+        _controller.SetButtonState(Xbox360Button.Up, (buttons & GamepadButtons.DPadUp) != 0);
+  _controller.SetButtonState(Xbox360Button.Down, (buttons & GamepadButtons.DPadDown) != 0);
+_controller.SetButtonState(Xbox360Button.Left, (buttons & GamepadButtons.DPadLeft) != 0);
+        _controller.SetButtonState(Xbox360Button.Right, (buttons & GamepadButtons.DPadRight) != 0);
     }
 
     /// <summary>
@@ -358,67 +376,65 @@ _currentReport.LeftThumbX = (short)(cmd.LeftStickX * short.MaxValue);
     /// </summary>
     public void UpdateAxes(float leftX, float leftY, float rightX, float rightY)
     {
- if (!_isConnected || _controller == null) return;
+        if (!_isConnected || _controller == null) return;
 
-     try
-    {
-            lock (_stateLock)
-      {
-                _currentReport.LeftThumbX = (short)(leftX * short.MaxValue);
-      _currentReport.LeftThumbY = (short)(-leftY * short.MaxValue);
-   _currentReport.RightThumbX = (short)(rightX * short.MaxValue);
-     _currentReport.RightThumbY = (short)(-rightY * short.MaxValue);
-
- _controller.SubmitReport(_currentReport);
-            }
-   }
-        catch (Exception ex)
+        try
         {
-       Console.WriteLine($"Error updating virtual controller axes: {ex.Message}");
+lock (_stateLock)
+            {
+       _controller.SetAxisValue(Xbox360Axis.LeftThumbX, (short)(leftX * short.MaxValue));
+     _controller.SetAxisValue(Xbox360Axis.LeftThumbY, (short)(-leftY * short.MaxValue));
+                _controller.SetAxisValue(Xbox360Axis.RightThumbX, (short)(rightX * short.MaxValue));
+       _controller.SetAxisValue(Xbox360Axis.RightThumbY, (short)(-rightY * short.MaxValue));
+      _controller.SubmitReport();
+       }
         }
+     catch (Exception ex)
+     {
+          Console.WriteLine($"Error updating virtual controller axes: {ex.Message}");
+   }
     }
 
     /// <summary>
     /// Update trigger values
-    /// </summary>
+ /// </summary>
     public void UpdateTriggers(float left, float right)
-    {
-        if (!_isConnected || _controller == null) return;
-
-  try
-        {
-    lock (_stateLock)
-    {
-         _currentReport.LeftTrigger = (byte)(left * 255);
- _currentReport.RightTrigger = (byte)(right * 255);
-
-    _controller.SubmitReport(_currentReport);
-            }
-        }
-        catch (Exception ex)
-{
-            Console.WriteLine($"Error updating virtual controller triggers: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-  /// Update button states
-    /// </summary>
-public void UpdateButtons(GamepadButtons buttons)
     {
         if (!_isConnected || _controller == null) return;
 
         try
         {
-     lock (_stateLock)
-            {
-          _currentReport.Buttons = ConvertButtons(buttons);
-   _controller.SubmitReport(_currentReport);
-            }
-  }
+         lock (_stateLock)
+       {
+   _controller.SetSliderValue(Xbox360Slider.LeftTrigger, (byte)(left * 255));
+                _controller.SetSliderValue(Xbox360Slider.RightTrigger, (byte)(right * 255));
+     _controller.SubmitReport();
+   }
+        }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error updating virtual controller buttons: {ex.Message}");
+            Console.WriteLine($"Error updating virtual controller triggers: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Update button states
+    /// </summary>
+    public void UpdateButtons(GamepadButtons buttons)
+    {
+        if (!_isConnected || _controller == null) return;
+
+        try
+        {
+   lock (_stateLock)
+       {
+        SetButtons(buttons);
+            _controller.SubmitReport();
+    }
+        }
+        catch (Exception ex)
+        {
+   Console.WriteLine($"Error updating virtual controller buttons: {ex.Message}");
         }
     }
 
@@ -430,15 +446,17 @@ public void UpdateButtons(GamepadButtons buttons)
         if (!_isConnected || _controller == null) return;
 
         try
-   {
-            _controller.SetButtonState(button, true);
-            await Task.Delay(durationMs);
-_controller.SetButtonState(button, false);
-        }
-    catch (Exception ex)
         {
-    Console.WriteLine($"Error pressing virtual controller button: {ex.Message}");
-      }
+    _controller.SetButtonState(button, true);
+     _controller.SubmitReport();
+            await Task.Delay(durationMs);
+            _controller.SetButtonState(button, false);
+            _controller.SubmitReport();
+        }
+        catch (Exception ex)
+    {
+            Console.WriteLine($"Error pressing virtual controller button: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -446,7 +464,7 @@ _controller.SetButtonState(button, false);
     /// </summary>
     public void SetVibration(byte largeMotor, byte smallMotor)
     {
-        Console.WriteLine($"Vibration request: Large={largeMotor}, Small={smallMotor}");
+      Console.WriteLine($"Vibration request: Large={largeMotor}, Small={smallMotor}");
     }
 
     /// <summary>
@@ -454,45 +472,32 @@ _controller.SetButtonState(button, false);
     /// </summary>
     public void ResetState()
     {
-   if (!_isConnected || _controller == null) return;
+        if (!_isConnected || _controller == null) return;
 
         try
         {
-   lock (_stateLock)
+        lock (_stateLock)
             {
-    _currentReport = new Xbox360Report();
-         _controller.SubmitReport(_currentReport);
-       }
+         // Reset all axes to center
+              _controller.SetAxisValue(Xbox360Axis.LeftThumbX, 0);
+ _controller.SetAxisValue(Xbox360Axis.LeftThumbY, 0);
+       _controller.SetAxisValue(Xbox360Axis.RightThumbX, 0);
+ _controller.SetAxisValue(Xbox360Axis.RightThumbY, 0);
+
+       // Reset triggers
+           _controller.SetSliderValue(Xbox360Slider.LeftTrigger, 0);
+                _controller.SetSliderValue(Xbox360Slider.RightTrigger, 0);
+
+         // Release all buttons
+          SetButtons(GamepadButtons.None);
+
+_controller.SubmitReport();
+            }
         }
- catch (Exception ex)
+        catch (Exception ex)
         {
-            Console.WriteLine($"Error resetting virtual controller: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// Convert our GamepadButtons flags to ViGEm Xbox360Button flags
-    /// </summary>
-    private static Xbox360Button ConvertButtons(GamepadButtons buttons)
-    {
-        Xbox360Button result = 0;
-
-        if ((buttons & GamepadButtons.A) != 0) result |= Xbox360Button.A;
-     if ((buttons & GamepadButtons.B) != 0) result |= Xbox360Button.B;
-        if ((buttons & GamepadButtons.X) != 0) result |= Xbox360Button.X;
-      if ((buttons & GamepadButtons.Y) != 0) result |= Xbox360Button.Y;
-        if ((buttons & GamepadButtons.LeftBumper) != 0) result |= Xbox360Button.LeftShoulder;
-        if ((buttons & GamepadButtons.RightBumper) != 0) result |= Xbox360Button.RightShoulder;
-        if ((buttons & GamepadButtons.Back) != 0) result |= Xbox360Button.Back;
-        if ((buttons & GamepadButtons.Start) != 0) result |= Xbox360Button.Start;
-        if ((buttons & GamepadButtons.LeftStick) != 0) result |= Xbox360Button.LeftThumb;
-        if ((buttons & GamepadButtons.RightStick) != 0) result |= Xbox360Button.RightThumb;
-        if ((buttons & GamepadButtons.DPadUp) != 0) result |= Xbox360Button.Up;
-   if ((buttons & GamepadButtons.DPadDown) != 0) result |= Xbox360Button.Down;
-        if ((buttons & GamepadButtons.DPadLeft) != 0) result |= Xbox360Button.Left;
-        if ((buttons & GamepadButtons.DPadRight) != 0) result |= Xbox360Button.Right;
-
-        return result;
+          Console.WriteLine($"Error resetting virtual controller: {ex.Message}");
+   }
     }
 
     /// <summary>
@@ -500,20 +505,20 @@ _controller.SetButtonState(button, false);
     /// </summary>
     public ControllerStatus GetStatus()
     {
-      return new ControllerStatus
+   return new ControllerStatus
         {
-            IsViGEmInstalled = _vigemAvailable,
-      IsConnected = _isConnected,
-            IsEnabled = _isEnabled,
+      IsViGEmInstalled = _vigemAvailable,
+   IsConnected = _isConnected,
+   IsEnabled = _isEnabled,
             IsInstallingDriver = _isInstallingDriver,
-    ControllerType = "Xbox 360",
-   LastError = _lastError,
-  CanAutoInstall = true
+   ControllerType = "Xbox 360",
+            LastError = _lastError,
+    CanAutoInstall = true
         };
     }
 
     public void Dispose()
-    {
+ {
         Disconnect();
      _client?.Dispose();
         _client = null;
@@ -529,7 +534,7 @@ public class ControllerStatus
     public bool IsConnected { get; set; }
     public bool IsEnabled { get; set; }
     public bool IsInstallingDriver { get; set; }
-  public string ControllerType { get; set; } = string.Empty;
+    public string ControllerType { get; set; } = string.Empty;
     public string? LastError { get; set; }
-  public bool CanAutoInstall { get; set; }
+    public bool CanAutoInstall { get; set; }
 }
