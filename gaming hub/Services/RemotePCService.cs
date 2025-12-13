@@ -125,15 +125,18 @@ if (!response.StartsWith("{")) continue;
      }
 
    var json = JObject.Parse(response);
-             var pc = new DiscoveredPC
-         {
-         Hostname = json["Hostname"]?.ToString() ?? "Unknown PC",
+       var pc = new DiscoveredPC
+  {
+       Hostname = json["Hostname"]?.ToString() ?? "Unknown PC",
          IpAddress = ip,
-             Port = json["Port"]?.Value<int>() ?? ApiPort,
+     Port = json["Port"]?.Value<int>() ?? ApiPort,
+             MacAddress = json["MacAddress"]?.ToString(),
   RequiresAuth = json["RequiresAuth"]?.Value<bool>() ?? false,
-        Version = json["Version"]?.ToString() ?? "1.0.0",
+  Version = json["Version"]?.ToString() ?? "1.0.0",
         SupportsVirtualController = json["SupportsVirtualController"]?.Value<bool>() ?? false,
-    VirtualControllerActive = json["VirtualControllerActive"]?.Value<bool>() ?? false
+            VirtualControllerActive = json["VirtualControllerActive"]?.Value<bool>() ?? false,
+    SupportsAudio = json["SupportsAudio"]?.Value<bool>() ?? false,
+     AudioStreamPort = json["AudioStreamPort"]?.Value<int>() ?? 19503
     };
 
           lock (discovered)
@@ -218,8 +221,8 @@ var allIps = Enumerable.Range(1, 254)
     RequiresAuth = json["RequiresAuth"]?.Value<bool>() ?? false,
         Version = json["Version"]?.ToString() ?? "1.0.0",
        SupportsVirtualController = json["SupportsVirtualController"]?.Value<bool>() ?? false,
-   VirtualControllerActive = json["VirtualControllerActive"]?.Value<bool>() ?? false
-        };
+   VirtualControllerActive = json["VirtualControllerActive"]?.Value<bool>() ?? false,
+    };
 
           lock (seenIps)
         {
@@ -229,7 +232,7 @@ var allIps = Enumerable.Range(1, 254)
  lock (discovered)
         {
        discovered.Add(pc);
-           }
+      }
      Log($"HTTP: Found {pc.Hostname} at {ip}:{port}");
             }
         }
@@ -263,13 +266,16 @@ var allIps = Enumerable.Range(1, 254)
             Hostname = json["Hostname"]?.ToString() ?? "Unknown PC",
            IpAddress = host,
        Port = json["Port"]?.Value<int>() ?? port,
+           MacAddress = json["MacAddress"]?.ToString(),
            RequiresAuth = json["RequiresAuth"]?.Value<bool>() ?? false,
          Version = json["Version"]?.ToString() ?? "1.0.0",
         SupportsVirtualController = json["SupportsVirtualController"]?.Value<bool>() ?? false,
-    VirtualControllerActive = json["VirtualControllerActive"]?.Value<bool>() ?? false
-     };
+    VirtualControllerActive = json["VirtualControllerActive"]?.Value<bool>() ?? false,
+    SupportsAudio = json["SupportsAudio"]?.Value<bool>() ?? false,
+            AudioStreamPort = json["AudioStreamPort"]?.Value<int>() ?? 19503
+ };
 
-     Log($"Connected! Found {pc.Hostname}");
+   Log($"Connected! Found {pc.Hostname}");
      return pc;
                 }
             }
@@ -557,10 +563,13 @@ try
         public string Hostname { get; set; } = string.Empty;
         public string IpAddress { get; set; } = string.Empty;
         public int Port { get; set; } = 19500;
-      public bool RequiresAuth { get; set; }
+      public string? MacAddress { get; set; }
+        public bool RequiresAuth { get; set; }
         public string Version { get; set; } = string.Empty;
         public bool SupportsVirtualController { get; set; }
    public bool VirtualControllerActive { get; set; }
+      public bool SupportsAudio { get; set; }
+        public int AudioStreamPort { get; set; } = 19503;
     }
 
     public class RemotePCStatus

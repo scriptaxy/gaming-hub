@@ -221,18 +221,55 @@ catch (Exception ex)
     {
         var ips = new List<string>();
         try
-        {
+ {
    var host = Dns.GetHostEntry(Dns.GetHostName());
         foreach (var ip in host.AddressList)
     {
      if (ip.AddressFamily == AddressFamily.InterNetwork)
     {
-   ips.Add(ip.ToString());
+ ips.Add(ip.ToString());
      }
-          }
+      }
   }
         catch { }
         return ips;
+    }
+
+    /// <summary>
+    /// Get the primary network adapter's MAC address for Wake-on-LAN
+    /// </summary>
+    private static string? GetPrimaryMacAddress()
+  {
+        try
+        {
+         var networkInterfaces = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces();
+     
+     // Find the best network adapter (Ethernet or WiFi, connected, with valid MAC)
+            var primaryAdapter = networkInterfaces
+         .Where(ni => ni.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up)
+           .Where(ni => ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Ethernet ||
+              ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211)
+     .Where(ni => !ni.Description.ToLower().Contains("virtual") &&
+   !ni.Description.ToLower().Contains("hyper-v") &&
+  !ni.Description.ToLower().Contains("vmware") &&
+       !ni.Description.ToLower().Contains("loopback"))
+.OrderByDescending(ni => ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Ethernet)
+      .FirstOrDefault();
+
+      if (primaryAdapter != null)
+            {
+      var macBytes = primaryAdapter.GetPhysicalAddress().GetAddressBytes();
+   if (macBytes.Length == 6)
+    {
+     return string.Join(":", macBytes.Select(b => b.ToString("X2")));
+      }
+   }
+      }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to get MAC address: {ex.Message}");
+        }
+        return null;
     }
 
     private async Task DiscoveryListenAsync()
@@ -258,7 +295,8 @@ try
            if (message == DiscoveryMessage || message.Contains("SYNKTRA"))
         {
            var settings = SettingsManager.Load();
-         var controllerStatus = InputSimulator.Instance.GetControllerStatus();
+       var controllerStatus = InputSimulator.Instance.GetControllerStatus();
+ var macAddress = GetPrimaryMacAddress();
    var response = new DiscoveryResponse
     {
    Hostname = Environment.MachineName,
@@ -266,16 +304,18 @@ try
    StreamWsPort = StreamWsPort,
      StreamUdpPort = StreamUdpPort,
   AudioStreamPort = AudioStreamPort,
+    MacAddress = macAddress,
     RequiresAuth = !string.IsNullOrEmpty(settings.AuthToken),
       Version = "1.0.0",
     SupportsStreaming = true,
  SupportsLowLatency = true,
   SupportsAudio = true,
+    SupportsWakeOnLan = !string.IsNullOrEmpty(macAddress),
    SupportsVirtualController = controllerStatus.IsViGEmInstalled,
    VirtualControllerActive = controllerStatus.IsConnected
-      };
+    };
 
-        var responseBytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response));
+    var responseBytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response));
        await _discoveryServer.SendAsync(responseBytes, responseBytes.Length, result.RemoteEndPoint);
        Console.WriteLine($"Discovery response sent to {result.RemoteEndPoint}");
      }
@@ -386,21 +426,24 @@ await SendResponse(response, 401, new { error = "Unauthorized" });
    else if (path == "/api/discover" && method == "GET")
         {
             var controllerStatus = InputSimulator.Instance.GetControllerStatus();
+   var macAddress = GetPrimaryMacAddress();
    result = new DiscoveryResponse
   {
-      Hostname = Environment.MachineName,
+    Hostname = Environment.MachineName,
       Port = _port,
  StreamWsPort = StreamWsPort,
 StreamUdpPort = StreamUdpPort,
          AudioStreamPort = AudioStreamPort,
+            MacAddress = macAddress,
    RequiresAuth = !string.IsNullOrEmpty(settings.AuthToken),
   Version = "1.0.0",
     SupportsStreaming = true,
       SupportsLowLatency = true,
     SupportsAudio = true,
+        SupportsWakeOnLan = !string.IsNullOrEmpty(macAddress),
         SupportsVirtualController = controllerStatus.IsViGEmInstalled,
-              VirtualControllerActive = controllerStatus.IsConnected
-            };
+    VirtualControllerActive = controllerStatus.IsConnected
+    };
         }
          else if (path == "/api/stream/start" && method == "POST")
      result = await StartStream(request);
@@ -822,15 +865,17 @@ success = true,
 public class DiscoveryResponse
 {
     public string Hostname { get; set; } = string.Empty;
-    public int Port { get; set; }
+  public int Port { get; set; }
     public int StreamWsPort { get; set; } = 19501;
     public int StreamUdpPort { get; set; } = 19502;
     public int AudioStreamPort { get; set; } = 19503;
-  public bool RequiresAuth { get; set; }
+  public string? MacAddress { get; set; }
+    public bool RequiresAuth { get; set; }
     public string Version { get; set; } = "1.0.0";
     public bool SupportsStreaming { get; set; }
     public bool SupportsLowLatency { get; set; }
     public bool SupportsAudio { get; set; }
+    public bool SupportsWakeOnLan { get; set; }
     public bool SupportsVirtualController { get; set; }
     public bool VirtualControllerActive { get; set; }
 }
