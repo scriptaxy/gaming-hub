@@ -96,10 +96,11 @@ _isStreaming = true;
   // Start streaming frames
 _ = Task.Run(() => StreamFramesAsync(_cts.Token));
       }
-   catch (Exception ex)
+        catch (Exception ex)
         {
             Console.WriteLine($"Failed to start low-latency streaming: {ex.Message}");
             _isStreaming = false;
+            Stop(); // Clean up any partially started services
         }
     }
 

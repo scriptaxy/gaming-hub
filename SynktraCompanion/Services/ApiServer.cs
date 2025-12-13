@@ -72,15 +72,17 @@ _gameScanner = new GameScanner();
     }
         catch (HttpListenerException ex) when (ex.ErrorCode == 5)
         {
-  _lastError = $"Access denied on port {_port}. Run as administrator or use a port above 1024.";
-      _isRunning = false;
+            _lastError = $"Access denied on port {_port}. Run as administrator or use a port above 1024.";
+            _isRunning = false;
             Console.WriteLine(_lastError);
+            Stop(); // Clean up any partially started services
         }
         catch (Exception ex)
         {
             _lastError = $"Failed to start API server: {ex.Message}";
-_isRunning = false;
-      Console.WriteLine(_lastError);
+            _isRunning = false;
+            Console.WriteLine(_lastError);
+            Stop(); // Clean up any partially started services
         }
     }
 
