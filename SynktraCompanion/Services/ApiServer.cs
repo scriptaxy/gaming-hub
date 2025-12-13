@@ -40,14 +40,16 @@ _gameScanner = new GameScanner();
 
     public async Task StartAsync(int port = 19500)
     {
-  _port = port;
+      _port = port;
         _cts = new CancellationTokenSource();
         _listener = new HttpListener();
 
-  var actualPort = await FindAvailablePortAsync(port);
-        _port = actualPort;
+        var actualPort = await FindAvailablePortAsync(port);
+  _port = actualPort;
+        
+        Console.WriteLine($"[ApiServer] Requested port: {port}, Actual port: {_port}");
 
-        _listener.Prefixes.Add($"http://*:{_port}/");
+      _listener.Prefixes.Add($"http://*:{_port}/");
 
         try
  {
