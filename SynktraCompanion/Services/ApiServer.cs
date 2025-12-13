@@ -23,7 +23,7 @@ public class ApiServer
 
     public const int DiscoveryPort = 5001;
     public const int StreamWsPort = 19501;
-  public const int StreamUdpPort = 19502;
+    public const int StreamUdpPort = 19502;
     public const string DiscoveryMessage = "SYNKTRA_DISCOVER";
 
   public LowLatencyStreamService StreamService => _streamService;
@@ -105,17 +105,21 @@ _isRunning = false;
 
     private static bool IsPortAvailable(int port)
     {
+        TcpListener? listener = null;
         try
         {
-  var listener = new TcpListener(IPAddress.Any, port);
+            listener = new TcpListener(IPAddress.Any, port);
             listener.Start();
-     listener.Stop();
- return true;
-    }
+            return true;
+        }
         catch
         {
-    return false;
-    }
+            return false;
+        }
+        finally
+        {
+            listener?.Stop();
+        }
     }
 
     private void StartDiscoveryServer()
@@ -123,22 +127,28 @@ _isRunning = false;
         try
         {
             _discoveryServer = new UdpClient();
-     _discoveryServer.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            _discoveryServer.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             _discoveryServer.Client.Bind(new IPEndPoint(IPAddress.Any, DiscoveryPort));
-   _discoveryServer.EnableBroadcast = true;
+            _discoveryServer.EnableBroadcast = true;
 
-         _ = Task.Run(DiscoveryListenAsync);
+            _ = Task.Run(DiscoveryListenAsync);
 
             Console.WriteLine($"Discovery server started on UDP port {DiscoveryPort}");
             foreach (var ip in GetLocalIPAddresses())
             {
- Console.WriteLine($"  Listening on: {ip}:{DiscoveryPort}");
-     }
+                Console.WriteLine($"  Listening on: {ip}:{DiscoveryPort}");
+            }
+        }
+        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
+        {
+            _lastError = $"Discovery port {DiscoveryPort} is already in use. Another instance may be running.";
+            Console.WriteLine(_lastError);
         }
         catch (Exception ex)
- {
-         Console.WriteLine($"Failed to start discovery server: {ex.Message}");
-}
+        {
+            _lastError = $"Failed to start discovery server: {ex.Message}";
+            Console.WriteLine(_lastError);
+        }
     }
 
     private static List<string> GetLocalIPAddresses()
