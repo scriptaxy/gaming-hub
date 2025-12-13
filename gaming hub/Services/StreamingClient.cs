@@ -48,7 +48,6 @@ namespace gaming_hub.Services
 
             _host = host;
             _port = port;
-            _cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)); // 10 second timeout
 
             try
             {
@@ -58,7 +57,12 @@ namespace gaming_hub.Services
 
                 Console.WriteLine($"Connecting to stream at {uri}");
 
-      await _webSocket.ConnectAsync(uri, _cts.Token);
+                // Use a separate timeout for connection only
+                using var connectionCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await _webSocket.ConnectAsync(uri, connectionCts.Token);
+
+                // Create long-lived token source for the connection lifecycle
+                _cts = new CancellationTokenSource();
 
  if (_webSocket.State == WebSocketState.Open)
                 {

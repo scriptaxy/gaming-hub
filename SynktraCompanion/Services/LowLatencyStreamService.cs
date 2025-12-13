@@ -30,9 +30,12 @@ public class LowLatencyStreamService
     // Stream settings optimized for low latency
     private int _targetFps = 60;
     private int _quality = 40; // Lower quality = faster encoding
-  private int _width = 1280;
+    private int _width = 1280;
     private int _height = 720;
     private bool _useUdp = true; // UDP is faster but may lose frames
+    
+    // UDP packet size limit (actual UDP max is ~65507 bytes)
+    private const int MaxUdpPacketSize = 65000;
 
     public bool IsStreaming => _isStreaming;
     public int ClientCount 
@@ -423,8 +426,7 @@ List<IPEndPoint> udpClientsCopy;
    }
 
             // UDP has size limits, so we may need to fragment large frames
-            // For simplicity, we'll just send if under ~64KB (actual UDP max is ~65507 bytes)
-            const int MaxUdpPacketSize = 65000;
+            // For simplicity, we'll just send if under ~64KB
             if (frameData.Length < MaxUdpPacketSize)
             {
      foreach (var client in udpClientsCopy)
