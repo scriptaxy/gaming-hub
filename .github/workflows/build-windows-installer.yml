@@ -116,36 +116,36 @@ jobs:
             SynktraCompanion/Installer/Output/*.exe
             SynktraCompanion-Portable-win-x64.zip
           body: |
-            ## Synktra Companion v${{ steps.version.outputs.version }}
-            
-            Desktop companion app for Gaming Hub - stream your PC games to your iPhone.
-                    
-            ### Features
-              - ?? Virtual Xbox 360 controller support (ViGEmBus)
-              - ?? Low-latency video streaming (WebSocket + UDP)
-              - ?? Audio streaming support
-              - ?? GPU priority optimization for gaming
-              - ?? Auto-discovery on local network
-              - ?? Game library scanning (Steam, Epic, GOG, Xbox)
-              - ? Hardware encoding (NVENC/AMF/QuickSync) for ultra-low latency
-         
-       ### Downloads
-              - **SynktraCompanion-Setup.exe** - Full installer with ViGEmBus driver
-              - **SynktraCompanion-Portable-win-x64.zip** - Portable version (no installation)
-                  
-                  ### Requirements
-                  - Windows 10/11 (64-bit)
-                  - .NET 9 Runtime (bundled in installer)
-                  - ViGEmBus driver (optional, for virtual controller)
-                  - NVIDIA/AMD/Intel GPU (optional, for hardware encoding)
- 
-      ### Ports Used
-       | Port   | Protocol | Description       |
-        |--------|----------|-------------------|
-      | 19500  | TCP    | REST API          |
-              | 19501  | TCP      | Video WebSocket    |
-         | 19502  | UDP      | Video UDP         |
-        | 19503  | TCP      | Audio WebSocket    |
-              | 5001   | UDP      | Discovery  |
+          ## Synktra Companion v${{ steps.version.outputs.version }}
+
+          Desktop companion app for Gaming Hub - stream your PC games to your iPhone.
+
+          ### Features
+          - ?? Virtual Xbox 360 controller support (ViGEmBus)
+          - ?? Low-latency video streaming (WebSocket + UDP)
+          - ?? Audio streaming support
+          - ?? GPU priority optimization for gaming
+          - ?? Auto-discovery on local network
+          - ?? Game library scanning (Steam, Epic, GOG, Xbox)
+          - ? Hardware encoding (NVENC/AMF/QuickSync) for ultra-low latency
+
+          ### Downloads
+          - **SynktraCompanion-Setup.exe** - Full installer with ViGEmBus driver
+          - **SynktraCompanion-Portable-win-x64.zip** - Portable version (no installation)
+
+          ### Requirements
+          - Windows 10/11 (64-bit)
+          - .NET 9 Runtime (bundled in installer)
+          - ViGEmBus driver (optional, for virtual controller)
+          - NVIDIA/AMD/Intel GPU (optional, for hardware encoding)
+
+          ### Ports Used
+          | Port   | Protocol | Description       |
+          |--------|----------|-------------------|
+          | 19500  | TCP    | REST API          |
+          | 19501  | TCP      | Video WebSocket    |
+          | 19502  | UDP      | Video UDP         |
+          | 19503  | TCP      | Audio WebSocket    |
+          | 5001   | UDP      | Discovery  |
         env:
-       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
