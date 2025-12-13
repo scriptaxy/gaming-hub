@@ -208,25 +208,40 @@ return true;
 
     private string BuildEncoderArgs()
     {
-      var pixFmt = "bgra"; // Desktop Duplication outputs BGRA
-        var encoderName = GetFFmpegEncoderName(_selectedEncoder);
-      var presetArg = GetPresetArg(_selectedEncoder);
-        var qualityArg = GetQualityArg(_selectedEncoder);
+   var pixFmt = "bgra"; // Desktop Duplication outputs BGRA
+      var encoderName = GetFFmpegEncoderName(_selectedEncoder);
+        var presetArg = GetPresetArg(_selectedEncoder);
+  var qualityArg = GetQualityArg(_selectedEncoder);
+        var tuneArg = GetTuneArg(_selectedEncoder);
         
         // Build FFmpeg arguments for ultra-low latency streaming
-    // Input: raw video from stdin
-        // Output: H.264 to stdout as raw NAL units
-        return $"-f rawvideo -pix_fmt {pixFmt} -s {_width}x{_height} -r {_fps} -i pipe:0 " +
-               $"-c:v {encoderName} " +
-        $"{presetArg} " +
-     $"{qualityArg} " +
-               $"-b:v {_bitrate}k -maxrate {_bitrate * 2}k -bufsize {_bitrate}k " +
-    $"-g {_fps * 2} " + // Keyframe every 2 seconds
-       $"-profile:v high -level 4.1 " +
-   $"-tune zerolatency " +
-   $"-flags +low_delay " +
-           $"-fflags nobuffer " +
-          $"-f h264 pipe:1";
+   // Input: raw video from stdin
+  // Output: H.264 to stdout as raw NAL units
+      var args = $"-f rawvideo -pix_fmt {pixFmt} -s {_width}x{_height} -r {_fps} -i pipe:0 " +
+         $"-c:v {encoderName} " +
+    $"{presetArg} " +
+               $"{qualityArg} " +
+        $"{tuneArg} " +
+            $"-b:v {_bitrate}k -maxrate {_bitrate * 2}k -bufsize {_bitrate}k " +
+        $"-g {_fps * 2} " + // Keyframe every 2 seconds
+          $"-profile:v high -level 4.1 ";
+    
+        // Add encoder-specific low latency flags
+        if (_selectedEncoder == HardwareEncoder.NVENC)
+        {
+            // NVENC specific: disable B-frames, enable low-delay HRD
+   args += "-bf 0 -rc-lookahead 0 -delay 0 -zerolatency 1 ";
+        }
+   else if (_selectedEncoder == HardwareEncoder.Software)
+        {
+            // x264 specific
+            args += "-tune zerolatency ";
+        }
+        
+        // Common low-latency output flags
+     args += "-flags +low_delay -fflags nobuffer -f h264 pipe:1";
+   
+      return args;
     }
 
     private string GetFFmpegEncoderName(HardwareEncoder encoder) => encoder switch
@@ -240,18 +255,30 @@ return true;
 
     private string GetPresetArg(HardwareEncoder encoder) => encoder switch
     {
-        HardwareEncoder.NVENC => "-preset p1 -tune ll", // p1 = fastest, ll = low latency
+        // NVENC presets: p1 (fastest) to p7 (slowest/best quality)
+      // For streaming: p1 or p2 with ll (low latency) or ull (ultra low latency) tune
+        HardwareEncoder.NVENC => "-preset p1",
         HardwareEncoder.AMF => "-quality speed -rc cqp",
         HardwareEncoder.QuickSync => "-preset veryfast -look_ahead 0",
-    _ => "-preset ultrafast"
+        _ => "-preset ultrafast"
     };
 
     private string GetQualityArg(HardwareEncoder encoder) => encoder switch
-    {
-        HardwareEncoder.NVENC => $"-cq {_quality} -rc vbr",
-      HardwareEncoder.AMF => $"-qp_i {_quality} -qp_p {_quality}",
+  {
+   // NVENC: Use CBR for consistent bitrate, or VBR with constrained quality
+        HardwareEncoder.NVENC => $"-rc cbr -cbr 1",
+        HardwareEncoder.AMF => $"-qp_i {_quality} -qp_p {_quality}",
         HardwareEncoder.QuickSync => $"-global_quality {_quality}",
-      _ => $"-crf {_quality}"
+   _ => $"-crf {_quality}"
+    };
+
+    private string GetTuneArg(HardwareEncoder encoder) => encoder switch
+    {
+        // NVENC tune options: hq, ll (low latency), ull (ultra low latency), lossless
+        HardwareEncoder.NVENC => "-tune ull",
+        HardwareEncoder.AMF => "",
+        HardwareEncoder.QuickSync => "",
+        _ => ""
     };
 
     private string GetEncoderName(HardwareEncoder encoder) => encoder switch
