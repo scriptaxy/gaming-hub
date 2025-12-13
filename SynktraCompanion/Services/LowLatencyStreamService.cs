@@ -98,6 +98,19 @@ private float _gpuResourceAllocation = 0.25f;
     private readonly ConcurrentQueue<InputCommand> _inputQueue = new();
     private Thread? _inputProcessorThread;
 
+    // Public properties
+    public bool IsStreaming => _isStreaming;
+    public int ClientCount
+    {
+        get
+        {
+       lock (_clientsLock)
+      {
+return _udpClients.Count + _wsClients.Count;
+            }
+        }
+  }
+
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int nIndex);
     private const int SM_CXSCREEN = 0;
