@@ -200,7 +200,7 @@ namespace gaming_hub.Services
  /// <summary>
         /// Get upcoming game releases - uses IGDB as primary source, falls back to Epic/Steam
  /// </summary>
-        public async Task<List<UpcomingRelease>> GetUpcomingReleasesAsync(int page = 1, int pageSize = 20)
+        public async Task<List<UpcomingRelease>> GetUpcomingReleasesAsync(int page = 1, int pageSize = 100)
    {
             var releases = new List<UpcomingRelease>();
          var seenGames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -364,7 +364,7 @@ namespace gaming_hub.Services
         /// <summary>
         /// Get most anticipated games (uses IGDB)
     /// </summary>
-    public async Task<List<UpcomingRelease>> GetMostAnticipatedAsync(int limit = 20)
+    public async Task<List<UpcomingRelease>> GetMostAnticipatedAsync(int limit = 100)
         {
             if (IGDBService.Instance.IsConfigured)
     {
