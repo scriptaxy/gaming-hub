@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -46,31 +47,116 @@ public partial class MainWindow : Window
     private bool _isInitialized;
 
     public MainWindow()
-  {
-     InitializeComponent();
+    {
+        InitializeComponent();
 
-     _gameScanner = new GameScanner();
-       _systemMonitor = new SystemMonitor();
- _apiServer = new ApiServer();
-         _discord = DiscordPresenceService.Instance;
-    _sessionStart = DateTime.Now;
+        _gameScanner = new GameScanner();
+        _systemMonitor = new SystemMonitor();
+        _apiServer = new ApiServer();
+   _discord = DiscordPresenceService.Instance;
+  _sessionStart = DateTime.Now;
 
-     _updateTimer = new DispatcherTimer
+  _updateTimer = new DispatcherTimer
+        {
+    Interval = TimeSpan.FromSeconds(2)
+        };
+     _updateTimer.Tick += UpdateTimer_Tick;
+
+        _toastTimer = new DispatcherTimer
+        {
+    Interval = TimeSpan.FromSeconds(3)
+     };
+        _toastTimer.Tick += ToastTimer_Tick;
+
+      // Handle source initialized for proper maximize
+        SourceInitialized += MainWindow_SourceInitialized;
+        Loaded += MainWindow_Loaded;
+        Closing += MainWindow_Closing;
+        StateChanged += MainWindow_StateChanged;
+    }
+
+    private void MainWindow_SourceInitialized(object? sender, EventArgs e)
+    {
+        // Hook into window message processing to handle maximize properly
+        var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+     System.Windows.Interop.HwndSource.FromHwnd(handle)?.AddHook(WindowProc);
+    }
+
+    private IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
  {
-          Interval = TimeSpan.FromSeconds(2)
-   };
-        _updateTimer.Tick += UpdateTimer_Tick;
+        // WM_GETMINMAXINFO - allows us to control maximize size
+        if (msg == 0x0024)
+        {
+       WmGetMinMaxInfo(hwnd, lParam);
+            handled = true;
+        }
+     return IntPtr.Zero;
+    }
 
-_toastTimer = new DispatcherTimer
-  {
-      Interval = TimeSpan.FromSeconds(3)
-   };
-            _toastTimer.Tick += ToastTimer_Tick;
+    private static void WmGetMinMaxInfo(IntPtr hwnd, IntPtr lParam)
+    {
+     var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
 
-       Loaded += MainWindow_Loaded;
-  Closing += MainWindow_Closing;
-      StateChanged += MainWindow_StateChanged;
+     // Get monitor info for the window
+      var monitor = MonitorFromWindow(hwnd, 0x00000002); // MONITOR_DEFAULTTONEAREST
+      if (monitor != IntPtr.Zero)
+        {
+       var monitorInfo = new MONITORINFO();
+   monitorInfo.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+     GetMonitorInfo(monitor, ref monitorInfo);
+
+         var workArea = monitorInfo.rcWork;
+     var monitorArea = monitorInfo.rcMonitor;
+
+  mmi.ptMaxPosition.X = Math.Abs(workArea.Left - monitorArea.Left);
+mmi.ptMaxPosition.Y = Math.Abs(workArea.Top - monitorArea.Top);
+       mmi.ptMaxSize.X = Math.Abs(workArea.Right - workArea.Left);
+  mmi.ptMaxSize.Y = Math.Abs(workArea.Bottom - workArea.Top);
+        }
+
+        Marshal.StructureToPtr(mmi, lParam, true);
   }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MINMAXINFO
+    {
+        public POINT ptReserved;
+   public POINT ptMaxSize;
+        public POINT ptMaxPosition;
+        public POINT ptMinTrackSize;
+        public POINT ptMaxTrackSize;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+ private struct MONITORINFO
+    {
+        public int cbSize;
+     public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
 
     #region Toast Notifications
     private void ShowToast(string message, bool isSuccess = true, bool isError = false)
@@ -222,23 +308,7 @@ ToastNotification.BeginAnimation(OpacityProperty, fadeIn);
     
     private void MaxBtn_Click(object sender, RoutedEventArgs e)
     {
-        if (WindowState == WindowState.Maximized)
-    {
- WindowState = WindowState.Normal;
-            // Reset max constraints
-            MaxHeight = double.PositiveInfinity;
-          MaxWidth = double.PositiveInfinity;
-        }
-        else
-        {
-            // Get the working area (excludes taskbar)
-       var workArea = SystemParameters.WorkArea;
-       MaxHeight = workArea.Height;
-            MaxWidth = workArea.Width;
-   Left = workArea.Left;
-            Top = workArea.Top;
-         WindowState = WindowState.Maximized;
-        }
+ WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     }
     
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => Close();

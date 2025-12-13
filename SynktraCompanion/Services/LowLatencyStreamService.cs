@@ -19,13 +19,13 @@ public class LowLatencyStreamService
 {
  private UdpClient? _udpServer;
     private HttpListener? _httpListener;
-    private CancellationTokenSource? _cts;
+ private CancellationTokenSource? _cts;
     private readonly List<IPEndPoint> _udpClients = [];
     private readonly List<WebSocket> _wsClients = [];
     private readonly object _clientsLock = new();
     private bool _isStreaming;
-    private int _wsPort = 5002;
-    private int _udpPort = 5003;
+    private int _wsPort = 19501;
+    private int _udpPort = 19502;
     
     // Stream settings optimized for low latency
     private int _targetFps = 60;
@@ -65,7 +65,7 @@ public class LowLatencyStreamService
     private const int SM_CXSCREEN = 0;
     private const int SM_CYSCREEN = 1;
 
-    public async Task StartAsync(int wsPort = 5002, int udpPort = 5003)
+    public async Task StartAsync(int wsPort = 19501, int udpPort = 19502)
   {
         if (_isStreaming) return;
 
