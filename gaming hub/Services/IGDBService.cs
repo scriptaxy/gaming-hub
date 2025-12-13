@@ -53,28 +53,39 @@ private string? _clientId;
 
         private void LoadCredentials()
       {
- try
-            {
-                var credPath = Path.Combine(
-  Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "igdb_credentials.json");
-           
+            try
+    {
+          var credPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+   "igdb_credentials.json");
+
       if (File.Exists(credPath))
-     {
-      var json = File.ReadAllText(credPath);
-            var creds = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
-             if (creds != null)
- {
-    _clientId = creds.GetValueOrDefault("clientId");
-  _clientSecret = creds.GetValueOrDefault("clientSecret");
-   }
-   }
-            }
-    catch (Exception ex)
+              {
+   var json = File.ReadAllText(credPath);
+   var creds = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
+   if (creds != null)
             {
-      Console.WriteLine($"Failed to load IGDB credentials: {ex.Message}");
+      _clientId = creds.GetValueOrDefault("clientId");
+      _clientSecret = creds.GetValueOrDefault("clientSecret");
+  }
+                }
+             
+   // Use default credentials if not configured
+         if (string.IsNullOrEmpty(_clientId) || string.IsNullOrEmpty(_clientSecret))
+   {
+          _clientId = "kx7awl87enzaqeontdddbzcwepeoel";
+            _clientSecret = "cczig93rp4hb4ev43e0bhmef3c5521";
+      Console.WriteLine("IGDB: Using default credentials");
+      }
+       }
+            catch (Exception ex)
+    {
+                Console.WriteLine($"Failed to load IGDB credentials: {ex.Message}");
+      // Fallback to defaults
+ _clientId = "kx7awl87enzaqeontdddbzcwepeoel";
+   _clientSecret = "cczig93rp4hb4ev43e0bhmef3c5521";
             }
-     }
+      }
         
       private void SaveCredentials()
         {
