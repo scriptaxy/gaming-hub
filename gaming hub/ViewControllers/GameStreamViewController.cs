@@ -11,31 +11,28 @@ namespace gaming_hub.ViewControllers
 
     public class GameStreamViewController : UIViewController
     {
-     private UIImageView _streamView = null!;
+        private UIImageView _streamView = null!;
         private VirtualGamepadView? _gamepadView;
-        private TouchInputView? _touchView;
+     private TouchInputView? _touchView;
         private UIActivityIndicatorView _loadingIndicator = null!;
         private UILabel _statusLabel = null!;
         private UIButton _closeButton = null!;
-    private UIButton _modeButton = null!;
- private UIButton _settingsButton = null!;
+    private UIButton _menuButton = null!;
+     private UIButton? _screenshotButton;
+   private UIButton? _recordButton;
         private UIView _controlsOverlay = null!;
         private UIView _cursorView = null!;
-        private StatsOverlayView? _statsOverlay;
-     private UIButton? _screenshotButton;
-        private UIButton? _recordButton;
+        private byte[]? _lastFrameData;
 
         private string _host;
         private int _port;
-        private string? _authToken;
+ private string? _authToken;
         private StreamInputMode _inputMode = StreamInputMode.Controller;
-  private ControllerStyle _controllerStyle = ControllerStyle.Xbox;
+        private ControllerStyle _controllerStyle = ControllerStyle.Xbox;
         private ControllerSize _controllerSize = ControllerSize.Default;
         private bool _controlsVisible = true;
-        private bool _statsVisible = true;
- private bool _gyroEnabled = false;
+        private bool _gyroEnabled = false;
         private bool _physicalControllerPriority = true;
-        private byte[]? _lastFrameData;
         private DateTime _lastInteraction = DateTime.Now;
         private NSTimer? _hideTimer;
 
@@ -44,7 +41,7 @@ public GameStreamViewController(string host, int port, string? authToken = null)
        _host = host;
             _port = port;
             _authToken = authToken;
- ModalPresentationStyle = UIModalPresentationStyle.FullScreen;
+       ModalPresentationStyle = UIModalPresentationStyle.FullScreen;
         }
 
     public override void ViewDidLoad()
@@ -150,9 +147,6 @@ private void SaveSettings()
    _cursorView.Layer.BorderWidth = 1;
 View.AddSubview(_cursorView);
 
-            _statsOverlay = new StatsOverlayView { TranslatesAutoresizingMaskIntoConstraints = false };
-  View.AddSubview(_statsOverlay);
-
             _controlsOverlay = new UIView
             {
         TranslatesAutoresizingMaskIntoConstraints = false,
@@ -182,13 +176,9 @@ View.AddSubview(_cursorView);
       _closeButton.TouchUpInside += (s, e) => DismissViewController(true, null);
         _controlsOverlay.AddSubview(_closeButton);
 
-_modeButton = CreateOverlayButton(_inputMode == StreamInputMode.Touch ? "hand.tap.fill" : "gamecontroller.fill", UIColor.White);
-        _modeButton.TouchUpInside += (s, e) => ToggleInputMode();
-            _controlsOverlay.AddSubview(_modeButton);
-
-      _settingsButton = CreateOverlayButton("gearshape.fill", UIColor.White);
- _settingsButton.TouchUpInside += (s, e) => ShowSettingsMenu();
- _controlsOverlay.AddSubview(_settingsButton);
+      _menuButton = CreateOverlayButton("ellipsis.circle", UIColor.White);
+      _menuButton.TouchUpInside += (s, e) => ShowMenu();
+        _controlsOverlay.AddSubview(_menuButton);
 
  _screenshotButton = CreateOverlayButton("camera.fill", UIColor.White);
          _screenshotButton.TouchUpInside += (s, e) => TakeScreenshot();
@@ -234,18 +224,13 @@ _modeButton = CreateOverlayButton(_inputMode == StreamInputMode.Touch ? "hand.ta
                 _closeButton.WidthAnchor.ConstraintEqualTo(44),
     _closeButton.HeightAnchor.ConstraintEqualTo(44),
 
-     _settingsButton.CenterYAnchor.ConstraintEqualTo(_controlsOverlay.CenterYAnchor),
-      _settingsButton.TrailingAnchor.ConstraintEqualTo(_closeButton.LeadingAnchor, -8),
- _settingsButton.WidthAnchor.ConstraintEqualTo(44),
-                _settingsButton.HeightAnchor.ConstraintEqualTo(44),
+     _menuButton.CenterYAnchor.ConstraintEqualTo(_controlsOverlay.CenterYAnchor),
+      _menuButton.TrailingAnchor.ConstraintEqualTo(_closeButton.LeadingAnchor, -8),
+           _menuButton.WidthAnchor.ConstraintEqualTo(44),
+     _menuButton.HeightAnchor.ConstraintEqualTo(44),
 
-     _modeButton.CenterYAnchor.ConstraintEqualTo(_controlsOverlay.CenterYAnchor),
-   _modeButton.TrailingAnchor.ConstraintEqualTo(_settingsButton.LeadingAnchor, -8),
-           _modeButton.WidthAnchor.ConstraintEqualTo(44),
-     _modeButton.HeightAnchor.ConstraintEqualTo(44),
-
-         _screenshotButton!.CenterYAnchor.ConstraintEqualTo(_controlsOverlay.CenterYAnchor),
-     _screenshotButton.TrailingAnchor.ConstraintEqualTo(_modeButton.LeadingAnchor, -8),
+     _screenshotButton!.CenterYAnchor.ConstraintEqualTo(_controlsOverlay.CenterYAnchor),
+     _screenshotButton.TrailingAnchor.ConstraintEqualTo(_menuButton.LeadingAnchor, -8),
         _screenshotButton.WidthAnchor.ConstraintEqualTo(44),
        _screenshotButton.HeightAnchor.ConstraintEqualTo(44),
 
@@ -259,9 +244,6 @@ _recordButton!.CenterYAnchor.ConstraintEqualTo(_controlsOverlay.CenterYAnchor),
 
          _statusLabel.TopAnchor.ConstraintEqualTo(_loadingIndicator.BottomAnchor, 16),
     _statusLabel.CenterXAnchor.ConstraintEqualTo(View.CenterXAnchor),
-
- _statsOverlay!.TopAnchor.ConstraintEqualTo(View.SafeAreaLayoutGuide.TopAnchor, 8),
-_statsOverlay.LeadingAnchor.ConstraintEqualTo(View.SafeAreaLayoutGuide.LeadingAnchor, 16),
        });
     }
 
@@ -352,40 +334,38 @@ StreamingClient.Instance.OnFrameReceived += OnFrameReceived;
  private void ToggleInputMode()
         {
      _inputMode = _inputMode == StreamInputMode.Touch ? StreamInputMode.Controller : StreamInputMode.Touch;
-      var config = UIImageSymbolConfiguration.Create(UIFont.SystemFontOfSize(22));
-        _modeButton.SetImage(UIImage.GetSystemImage(
-     _inputMode == StreamInputMode.Touch ? "hand.tap.fill" : "gamecontroller.fill", config),
-    UIControlState.Normal);
-    SetupInputView();
-            SaveSettings();
-  ShowToast(_inputMode == StreamInputMode.Touch ? "Touch Mode" : "Controller Mode");
+      SetupInputView();
+         SaveSettings();
+ ShowToast(_inputMode == StreamInputMode.Touch ? "Touch Mode" : "Controller Mode");
         }
 
-        private void ShowSettingsMenu()
+        private void ShowMenu()
         {
-            ShowControls();
-   var alert = UIAlertController.Create("Stream Settings", null, UIAlertControllerStyle.ActionSheet);
+ShowControls();
+   var alert = UIAlertController.Create("Menu", null, UIAlertControllerStyle.ActionSheet);
 
-    alert.AddAction(UIAlertAction.Create(_statsVisible ? "Hide Stats ?" : "Show Stats",
-    UIAlertActionStyle.Default, _ => { _statsVisible = !_statsVisible; _statsOverlay!.Hidden = !_statsVisible; }));
+         // Input mode toggle
+     alert.AddAction(UIAlertAction.Create(
+     _inputMode == StreamInputMode.Touch ? "Switch to Controller Mode" : "Switch to Touch Mode",
+                UIAlertActionStyle.Default, _ => ToggleInputMode()));
 
-            if (GyroscopeAimingService.Instance.IsAvailable)
-       alert.AddAction(UIAlertAction.Create(_gyroEnabled ? "Disable Gyro ?" : "Enable Gyro",
+    if (GyroscopeAimingService.Instance.IsAvailable)
+     alert.AddAction(UIAlertAction.Create(_gyroEnabled ? "Disable Gyro" : "Enable Gyro",
        UIAlertActionStyle.Default, _ => ToggleGyroscope()));
 
-            if (PhysicalControllerService.Instance.IsControllerConnected)
-                alert.AddAction(UIAlertAction.Create($"Controller: {PhysicalControllerService.Instance.ControllerName} ?",
+       if (PhysicalControllerService.Instance.IsControllerConnected)
+   alert.AddAction(UIAlertAction.Create($"Controller: {PhysicalControllerService.Instance.ControllerName} ?",
        UIAlertActionStyle.Default, null));
 
       alert.AddAction(UIAlertAction.Create("Quick Actions...", UIAlertActionStyle.Default, _ => ShowQuickActionsMenu()));
-            alert.AddAction(UIAlertAction.Create("Button Mapping...", UIAlertActionStyle.Default, _ => ShowButtonMappingMenu()));
+   alert.AddAction(UIAlertAction.Create("Button Mapping...", UIAlertActionStyle.Default, _ => ShowButtonMappingMenu()));
 
-    alert.AddAction(UIAlertAction.Create($"Style: {(_controllerStyle == ControllerStyle.Xbox ? "Xbox" : "PlayStation")}",
+  alert.AddAction(UIAlertAction.Create($"Style: {(_controllerStyle == ControllerStyle.Xbox ? "Xbox" : "PlayStation")}",
        UIAlertActionStyle.Default, _ =>
-                {
-          _controllerStyle = _controllerStyle == ControllerStyle.Xbox ? ControllerStyle.PlayStation : ControllerStyle.Xbox;
-         if (_inputMode == StreamInputMode.Controller) SetupInputView();
-        SaveSettings();
+     {
+     _controllerStyle = _controllerStyle == ControllerStyle.Xbox ? ControllerStyle.PlayStation : ControllerStyle.Xbox;
+     if (_inputMode == StreamInputMode.Controller) SetupInputView();
+   SaveSettings();
      }));
 
  alert.AddAction(UIAlertAction.Create($"Size: {(_controllerSize == ControllerSize.Default ? "Default" : "Minimal")}",
@@ -396,12 +376,12 @@ StreamingClient.Instance.OnFrameReceived += OnFrameReceived;
            SaveSettings();
      }));
 
-            alert.AddAction(UIAlertAction.Create("Cancel", UIAlertActionStyle.Cancel, null));
+         alert.AddAction(UIAlertAction.Create("Cancel", UIAlertActionStyle.Cancel, null));
 
             if (alert.PopoverPresentationController != null)
      {
-          alert.PopoverPresentationController.SourceView = _settingsButton;
-       alert.PopoverPresentationController.SourceRect = _settingsButton.Bounds;
+  alert.PopoverPresentationController.SourceView = _menuButton;
+alert.PopoverPresentationController.SourceRect = _menuButton.Bounds;
             }
             PresentViewController(alert, true, null);
         }
@@ -423,8 +403,8 @@ StreamingClient.Instance.OnFrameReceived += OnFrameReceived;
 
       if (alert.PopoverPresentationController != null)
             {
-                alert.PopoverPresentationController.SourceView = _settingsButton;
-    alert.PopoverPresentationController.SourceRect = _settingsButton.Bounds;
+                alert.PopoverPresentationController.SourceView = _menuButton;
+    alert.PopoverPresentationController.SourceRect = _menuButton.Bounds;
     }
       PresentViewController(alert, true, null);
         }
@@ -451,8 +431,8 @@ StreamingClient.Instance.OnFrameReceived += OnFrameReceived;
 
             if (alert.PopoverPresentationController != null)
             {
-      alert.PopoverPresentationController.SourceView = _settingsButton;
-              alert.PopoverPresentationController.SourceRect = _settingsButton.Bounds;
+      alert.PopoverPresentationController.SourceView = _menuButton;
+              alert.PopoverPresentationController.SourceRect = _menuButton.Bounds;
             }
      PresentViewController(alert, true, null);
         }
@@ -534,7 +514,6 @@ BackgroundColor = UIColor.FromRGBA(0, 0, 0, 180),
      using var data = NSData.FromArray(frameData);
           var image = UIImage.LoadFromData(data);
             if (image != null) _streamView.Image = image;
-       _statsOverlay?.RecordFrame(frameData.Length);
        if (StreamCaptureService.Instance.IsRecording)
         StreamCaptureService.Instance.AddRecordingFrame(frameData);
     }
@@ -719,75 +698,6 @@ OnTouchInput?.Invoke((float)(_cursorPosition.X / Bounds.Width), (float)(_cursorP
         }
     }
 
-    public class StatsOverlayView : UIView
-    {
-        private UILabel _fpsLabel = null!;
-    private UILabel _latencyLabel = null!;
-        private UILabel _bitrateLabel = null!;
-        private int _frameCount;
-        private long _totalBytes;
-  private DateTime _lastUpdate = DateTime.Now;
-private DateTime _lastFrameTime = DateTime.Now;
-        private double _currentFps, _currentBitrate, _estimatedLatency;
-
-        public StatsOverlayView()
-        {
-        BackgroundColor = UIColor.FromRGBA(0, 0, 0, 150);
-            Layer.CornerRadius = 8;
-       var stack = new UIStackView { Axis = UILayoutConstraintAxis.Vertical, Spacing = 4, TranslatesAutoresizingMaskIntoConstraints = false };
-   AddSubview(stack);
-       _fpsLabel = CreateLabel("FPS: --");
-     _latencyLabel = CreateLabel("Latency: --ms");
-      _bitrateLabel = CreateLabel("Bitrate: --");
-  stack.AddArrangedSubview(_fpsLabel);
-            stack.AddArrangedSubview(_latencyLabel);
-          stack.AddArrangedSubview(_bitrateLabel);
-NSLayoutConstraint.ActivateConstraints(new[]
-            {
-      stack.TopAnchor.ConstraintEqualTo(TopAnchor, 8),
-     stack.BottomAnchor.ConstraintEqualTo(BottomAnchor, -8),
-       stack.LeadingAnchor.ConstraintEqualTo(LeadingAnchor, 12),
-        stack.TrailingAnchor.ConstraintEqualTo(TrailingAnchor, -12),
-            });
-        }
-
-        private UILabel CreateLabel(string text) => new UILabel
-        {
-            Text = text,
-     TextColor = UIColor.White,
-   Font = UIFont.SystemFontOfSize(11, UIFontWeight.Medium)
-  };
-
-        public void RecordFrame(int frameSize)
-    {
-     _frameCount++;
-      _totalBytes += frameSize;
-            var now = DateTime.Now;
-     var frameDelta = (now - _lastFrameTime).TotalMilliseconds;
- _lastFrameTime = now;
-        _estimatedLatency = _estimatedLatency * 0.9 + frameDelta * 0.1;
- var elapsed = (now - _lastUpdate).TotalSeconds;
-       if (elapsed >= 1.0)
-     {
-           _currentFps = _frameCount / elapsed;
-         _currentBitrate = (_totalBytes * 8) / elapsed / 1_000_000;
-        _frameCount = 0;
-      _totalBytes = 0;
-    _lastUpdate = now;
-       UpdateLabels();
-            }
-     }
-
-        private void UpdateLabels()
-  {
-  _fpsLabel.Text = $"FPS: {_currentFps:F1}";
-            _fpsLabel.TextColor = _currentFps >= 55 ? UIColor.SystemGreen : _currentFps >= 30 ? UIColor.SystemYellow : UIColor.SystemRed;
-     _latencyLabel.Text = $"Latency: {_estimatedLatency:F0}ms";
-            _latencyLabel.TextColor = _estimatedLatency <= 50 ? UIColor.SystemGreen : _estimatedLatency <= 100 ? UIColor.SystemYellow : UIColor.SystemRed;
-            _bitrateLabel.Text = $"Bitrate: {(_currentBitrate >= 1 ? $"{_currentBitrate:F1} Mbps" : $"{_currentBitrate * 1000:F0} Kbps")}";
- }
-    }
-
     public class VirtualGamepadView : UIView
     {
         private readonly ControllerStyle _style;
@@ -795,19 +705,428 @@ NSLayoutConstraint.ActivateConstraints(new[]
    public event Action<GamepadState>? OnStateChanged;
         private GamepadState _state = new();
 
+ // Left side controls
+ private VirtualStickView? _leftStick;
+        private UIButton? _dpadUp, _dpadDown, _dpadLeft, _dpadRight;
+
+   // Right side controls  
+        private VirtualStickView? _rightStick;
+  private UIButton? _buttonA, _buttonB, _buttonX, _buttonY;
+        
+      // Triggers and bumpers
+    private UIButton? _leftBumper, _rightBumper;
+        private UIButton? _leftTrigger, _rightTrigger;
+   
+        // Menu buttons
+        private UIButton? _startButton, _backButton;
+
         public VirtualGamepadView(ControllerStyle style, ControllerSize size)
-   {
-       _style = style;
-    _size = size;
-MultipleTouchEnabled = true;
- // Virtual gamepad controls setup - simplified placeholder
+        {
+   _style = style;
+            _size = size;
+            MultipleTouchEnabled = true;
+            SetupControls();
         }
 
-     public override void LayoutSubviews()
-  {
-      base.LayoutSubviews();
-     }
+     private void SetupControls()
+        {
+            var isMinimal = _size == ControllerSize.Minimal;
+            var stickSize = isMinimal ? 100 : 130;
+            var buttonSize = isMinimal ? 44 : 54;
+            var smallButtonSize = isMinimal ? 36 : 44;
 
-     private void NotifyStateChanged() => OnStateChanged?.Invoke(_state);
+            // Left analog stick
+   _leftStick = new VirtualStickView(stickSize)
+        {
+     TranslatesAutoresizingMaskIntoConstraints = false
+         };
+          _leftStick.OnStickMoved += (x, y) =>
+            {
+      _state.LeftStickX = x;
+          _state.LeftStickY = y;
+ NotifyStateChanged();
+     };
+     AddSubview(_leftStick);
+
+ // Right analog stick
+ _rightStick = new VirtualStickView(stickSize)
+   {
+    TranslatesAutoresizingMaskIntoConstraints = false
+      };
+            _rightStick.OnStickMoved += (x, y) =>
+            {
+     _state.RightStickX = x;
+    _state.RightStickY = y;
+       NotifyStateChanged();
+         };
+     AddSubview(_rightStick);
+
+       // Face buttons (A, B, X, Y)
+        var aLabel = _style == ControllerStyle.Xbox ? "A" : "X";
+    var bLabel = _style == ControllerStyle.Xbox ? "B" : "O";
+            var xLabel = _style == ControllerStyle.Xbox ? "X" : "?";
+ var yLabel = _style == ControllerStyle.Xbox ? "Y" : "?";
+            
+            var aColor = _style == ControllerStyle.Xbox ? UIColor.FromRGB(96, 185, 58) : UIColor.FromRGB(70, 130, 255);
+            var bColor = _style == ControllerStyle.Xbox ? UIColor.FromRGB(221, 68, 59) : UIColor.FromRGB(255, 70, 90);
+       var xColor = _style == ControllerStyle.Xbox ? UIColor.FromRGB(63, 130, 205) : UIColor.FromRGB(255, 100, 180);
+  var yColor = _style == ControllerStyle.Xbox ? UIColor.FromRGB(245, 199, 72) : UIColor.FromRGB(100, 220, 180);
+
+     _buttonA = CreateFaceButton(aLabel, aColor, buttonSize, GamepadButtons.A);
+    _buttonB = CreateFaceButton(bLabel, bColor, buttonSize, GamepadButtons.B);
+       _buttonX = CreateFaceButton(xLabel, xColor, buttonSize, GamepadButtons.X);
+ _buttonY = CreateFaceButton(yLabel, yColor, buttonSize, GamepadButtons.Y);
+
+AddSubview(_buttonA);
+            AddSubview(_buttonB);
+            AddSubview(_buttonX);
+            AddSubview(_buttonY);
+
+            // D-Pad
+    _dpadUp = CreateDPadButton("?", smallButtonSize, GamepadButtons.DPadUp);
+        _dpadDown = CreateDPadButton("?", smallButtonSize, GamepadButtons.DPadDown);
+        _dpadLeft = CreateDPadButton("?", smallButtonSize, GamepadButtons.DPadLeft);
+            _dpadRight = CreateDPadButton("?", smallButtonSize, GamepadButtons.DPadRight);
+
+            AddSubview(_dpadUp);
+          AddSubview(_dpadDown);
+      AddSubview(_dpadLeft);
+            AddSubview(_dpadRight);
+
+  // Bumpers
+        _leftBumper = CreateBumperButton("LB", 70, 36, GamepadButtons.LeftBumper);
+            _rightBumper = CreateBumperButton("RB", 70, 36, GamepadButtons.RightBumper);
+    AddSubview(_leftBumper);
+ AddSubview(_rightBumper);
+
+    // Triggers
+       _leftTrigger = CreateTriggerButton("LT", 60, 40);
+            _rightTrigger = CreateTriggerButton("RT", 60, 40);
+     AddSubview(_leftTrigger);
+         AddSubview(_rightTrigger);
+
+            // Menu buttons
+            _startButton = CreateMenuButton("?", smallButtonSize - 8, GamepadButtons.Start);
+            _backButton = CreateMenuButton("??", smallButtonSize - 8, GamepadButtons.Back);
+       AddSubview(_startButton);
+  AddSubview(_backButton);
+        }
+
+        private UIButton CreateFaceButton(string label, UIColor color, int size, GamepadButtons button)
+        {
+     var btn = new UIButton(UIButtonType.Custom)
+       {
+    TranslatesAutoresizingMaskIntoConstraints = false,
+           BackgroundColor = color.ColorWithAlpha(0.7f)
+   };
+     btn.SetTitle(label, UIControlState.Normal);
+   btn.SetTitleColor(UIColor.White, UIControlState.Normal);
+    btn.TitleLabel!.Font = UIFont.BoldSystemFontOfSize(size > 50 ? 20 : 16);
+        btn.Layer.CornerRadius = size / 2;
+            btn.Layer.BorderColor = UIColor.White.ColorWithAlpha(0.3f).CGColor;
+ btn.Layer.BorderWidth = 2;
+
+            btn.TouchDown += (s, e) => { _state.Buttons |= button; NotifyStateChanged(); btn.Transform = CGAffineTransform.MakeScale(0.9f, 0.9f); };
+     btn.TouchUpInside += (s, e) => { _state.Buttons &= ~button; NotifyStateChanged(); btn.Transform = CGAffineTransform.MakeIdentity(); };
+   btn.TouchUpOutside += (s, e) => { _state.Buttons &= ~button; NotifyStateChanged(); btn.Transform = CGAffineTransform.MakeIdentity(); };
+       btn.TouchCancel += (s, e) => { _state.Buttons &= ~button; NotifyStateChanged(); btn.Transform = CGAffineTransform.MakeIdentity(); };
+
+  NSLayoutConstraint.ActivateConstraints(new[]
+            {
+                btn.WidthAnchor.ConstraintEqualTo(size),
+           btn.HeightAnchor.ConstraintEqualTo(size)
+     });
+
+            return btn;
+  }
+
+        private UIButton CreateDPadButton(string label, int size, GamepadButtons button)
+     {
+  var btn = new UIButton(UIButtonType.Custom)
+            {
+       TranslatesAutoresizingMaskIntoConstraints = false,
+  BackgroundColor = UIColor.FromRGBA(80, 80, 80, 180)
+            };
+btn.SetTitle(label, UIControlState.Normal);
+            btn.SetTitleColor(UIColor.White, UIControlState.Normal);
+       btn.TitleLabel!.Font = UIFont.SystemFontOfSize(14);
+  btn.Layer.CornerRadius = 6;
+
+            btn.TouchDown += (s, e) => { _state.Buttons |= button; NotifyStateChanged(); btn.BackgroundColor = UIColor.FromRGBA(120, 120, 120, 220); };
+            btn.TouchUpInside += (s, e) => { _state.Buttons &= ~button; NotifyStateChanged(); btn.BackgroundColor = UIColor.FromRGBA(80, 80, 80, 180); };
+            btn.TouchUpOutside += (s, e) => { _state.Buttons &= ~button; NotifyStateChanged(); btn.BackgroundColor = UIColor.FromRGBA(80, 80, 80, 180); };
+      btn.TouchCancel += (s, e) => { _state.Buttons &= ~button; NotifyStateChanged(); btn.BackgroundColor = UIColor.FromRGBA(80, 80, 80, 180); };
+
+   NSLayoutConstraint.ActivateConstraints(new[]
+            {
+  btn.WidthAnchor.ConstraintEqualTo(size),
+    btn.HeightAnchor.ConstraintEqualTo(size)
+            });
+
+   return btn;
+        }
+
+        private UIButton CreateBumperButton(string label, int width, int height, GamepadButtons button)
+        {
+            var btn = new UIButton(UIButtonType.Custom)
+ {
+            TranslatesAutoresizingMaskIntoConstraints = false,
+  BackgroundColor = UIColor.FromRGBA(60, 60, 60, 200)
+ };
+            btn.SetTitle(label, UIControlState.Normal);
+     btn.SetTitleColor(UIColor.White, UIControlState.Normal);
+            btn.TitleLabel!.Font = UIFont.BoldSystemFontOfSize(14);
+          btn.Layer.CornerRadius = 8;
+
+  btn.TouchDown += (s, e) => { _state.Buttons |= button; NotifyStateChanged(); btn.BackgroundColor = UIColor.FromRGBA(100, 100, 100, 220); };
+            btn.TouchUpInside += (s, e) => { _state.Buttons &= ~button; NotifyStateChanged(); btn.BackgroundColor = UIColor.FromRGBA(60, 60, 60, 200); };
+ btn.TouchUpOutside += (s, e) => { _state.Buttons &= ~button; NotifyStateChanged(); btn.BackgroundColor = UIColor.FromRGBA(60, 60, 60, 200); };
+          btn.TouchCancel += (s, e) => { _state.Buttons &= ~button; NotifyStateChanged(); btn.BackgroundColor = UIColor.FromRGBA(60, 60, 60, 200); };
+
+        NSLayoutConstraint.ActivateConstraints(new[]
+            {
+                btn.WidthAnchor.ConstraintEqualTo(width),
+btn.HeightAnchor.ConstraintEqualTo(height)
+         });
+
+            return btn;
+        }
+
+        private UIButton CreateTriggerButton(string label, int width, int height)
+        {
+    var btn = new UIButton(UIButtonType.Custom)
+  {
+     TranslatesAutoresizingMaskIntoConstraints = false,
+        BackgroundColor = UIColor.FromRGBA(50, 50, 50, 200)
+        };
+            btn.SetTitle(label, UIControlState.Normal);
+         btn.SetTitleColor(UIColor.White, UIControlState.Normal);
+     btn.TitleLabel!.Font = UIFont.BoldSystemFontOfSize(12);
+            btn.Layer.CornerRadius = 6;
+
+            var isLeft = label == "LT";
+   btn.TouchDown += (s, e) =>
+     {
+            if (isLeft) _state.LeftTrigger = 1.0f;
+   else _state.RightTrigger = 1.0f;
+  NotifyStateChanged();
+            btn.BackgroundColor = UIColor.FromRGBA(100, 100, 100, 220);
+            };
+            btn.TouchUpInside += (s, e) =>
+            {
+      if (isLeft) _state.LeftTrigger = 0f;
+                else _state.RightTrigger = 0f;
+      NotifyStateChanged();
+btn.BackgroundColor = UIColor.FromRGBA(50, 50, 50, 200);
+            };
+            btn.TouchUpOutside += (s, e) =>
+ {
+  if (isLeft) _state.LeftTrigger = 0f;
+      else _state.RightTrigger = 0f;
+      NotifyStateChanged();
+                btn.BackgroundColor = UIColor.FromRGBA(50, 50, 50, 200);
+      };
+btn.TouchCancel += (s, e) =>
+     {
+      if (isLeft) _state.LeftTrigger = 0f;
+            else _state.RightTrigger = 0f;
+                NotifyStateChanged();
+      btn.BackgroundColor = UIColor.FromRGBA(50, 50, 50, 200);
+            };
+
+  NSLayoutConstraint.ActivateConstraints(new[]
+   {
+     btn.WidthAnchor.ConstraintEqualTo(width),
+         btn.HeightAnchor.ConstraintEqualTo(height)
+  });
+
+        return btn;
+ }
+
+        private UIButton CreateMenuButton(string label, int size, GamepadButtons button)
+        {
+            var btn = new UIButton(UIButtonType.Custom)
+            {
+   TranslatesAutoresizingMaskIntoConstraints = false,
+       BackgroundColor = UIColor.FromRGBA(40, 40, 40, 180)
+ };
+    btn.SetTitle(label, UIControlState.Normal);
+btn.SetTitleColor(UIColor.White.ColorWithAlpha(0.8f), UIControlState.Normal);
+ btn.TitleLabel!.Font = UIFont.SystemFontOfSize(12);
+            btn.Layer.CornerRadius = size / 2;
+
+   btn.TouchDown += (s, e) => { _state.Buttons |= button; NotifyStateChanged(); };
+  btn.TouchUpInside += (s, e) => { _state.Buttons &= ~button; NotifyStateChanged(); };
+   btn.TouchUpOutside += (s, e) => { _state.Buttons &= ~button; NotifyStateChanged(); };
+       btn.TouchCancel += (s, e) => { _state.Buttons &= ~button; NotifyStateChanged(); };
+
+            NSLayoutConstraint.ActivateConstraints(new[]
+            {
+       btn.WidthAnchor.ConstraintEqualTo(size),
+         btn.HeightAnchor.ConstraintEqualTo(size)
+         });
+
+        return btn;
+        }
+
+        public override void LayoutSubviews()
+     {
+      base.LayoutSubviews();
+
+  var safeArea = SafeAreaInsets;
+            var isMinimal = _size == ControllerSize.Minimal;
+            var stickSize = isMinimal ? 100 : 130;
+      var buttonSize = isMinimal ? 44 : 54;
+       var spacing = isMinimal ? 6 : 10;
+
+     // Left stick - bottom left
+     if (_leftStick != null)
+      {
+    _leftStick.Frame = new CGRect(
+            safeArea.Left + 20,
+       Bounds.Height - stickSize - safeArea.Bottom - 30,
+        stickSize,
+            stickSize);
+    }
+
+  // D-Pad - above left stick
+  var dpadCenterX = safeArea.Left + 20 + stickSize / 2;
+            var dpadCenterY = Bounds.Height - stickSize - safeArea.Bottom - 30 - 80;
+     var dpadButtonSize = isMinimal ? 36 : 44;
+       var dpadSpacing = dpadButtonSize + 2;
+
+        if (_dpadUp != null) _dpadUp.Center = new CGPoint(dpadCenterX, dpadCenterY - dpadSpacing / 2);
+       if (_dpadDown != null) _dpadDown.Center = new CGPoint(dpadCenterX, dpadCenterY + dpadSpacing / 2);
+        if (_dpadLeft != null) _dpadLeft.Center = new CGPoint(dpadCenterX - dpadSpacing / 2, dpadCenterY);
+   if (_dpadRight != null) _dpadRight.Center = new CGPoint(dpadCenterX + dpadSpacing / 2, dpadCenterY);
+
+            // Right stick - bottom right
+     if (_rightStick != null)
+            {
+      _rightStick.Frame = new CGRect(
+    Bounds.Width - stickSize - safeArea.Right - 20,
+           Bounds.Height - stickSize - safeArea.Bottom - 30,
+        stickSize,
+    stickSize);
+    }
+
+            // Face buttons - above right stick (diamond layout)
+            var faceCenterX = Bounds.Width - stickSize / 2 - safeArea.Right - 20;
+    var faceCenterY = Bounds.Height - stickSize - safeArea.Bottom - 30 - 80;
+         var faceSpacing = buttonSize + spacing;
+
+            if (_buttonA != null) _buttonA.Center = new CGPoint(faceCenterX, faceCenterY + faceSpacing / 2);
+       if (_buttonB != null) _buttonB.Center = new CGPoint(faceCenterX + faceSpacing / 2, faceCenterY);
+ if (_buttonX != null) _buttonX.Center = new CGPoint(faceCenterX - faceSpacing / 2, faceCenterY);
+        if (_buttonY != null) _buttonY.Center = new CGPoint(faceCenterX, faceCenterY - faceSpacing / 2);
+
+            // Bumpers - top corners
+     if (_leftBumper != null) _leftBumper.Center = new CGPoint(safeArea.Left + 55, safeArea.Top + 80);
+    if (_rightBumper != null) _rightBumper.Center = new CGPoint(Bounds.Width - safeArea.Right - 55, safeArea.Top + 80);
+
+    // Triggers - above bumpers
+   if (_leftTrigger != null) _leftTrigger.Center = new CGPoint(safeArea.Left + 50, safeArea.Top + 120);
+            if (_rightTrigger != null) _rightTrigger.Center = new CGPoint(Bounds.Width - safeArea.Right - 50, safeArea.Top + 120);
+
+            // Menu buttons - center top
+ var menuY = safeArea.Top + 80;
+   if (_backButton != null) _backButton.Center = new CGPoint(Bounds.Width / 2 - 40, menuY);
+      if (_startButton != null) _startButton.Center = new CGPoint(Bounds.Width / 2 + 40, menuY);
+        }
+
+      private void NotifyStateChanged() => OnStateChanged?.Invoke(_state);
+    }
+
+    /// <summary>
+    /// Virtual analog stick view
+    /// </summary>
+    public class VirtualStickView : UIView
+    {
+    public event Action<float, float>? OnStickMoved;
+
+  private UIView _thumbView;
+        private CGPoint _centerPoint;
+        private readonly nfloat _maxDistance;
+   private bool _isTracking;
+
+        public VirtualStickView(int size)
+   {
+    _maxDistance = size / 2 - 20;
+
+            BackgroundColor = UIColor.FromRGBA(40, 40, 40, 150);
+   Layer.CornerRadius = size / 2;
+ Layer.BorderColor = UIColor.White.ColorWithAlpha(0.2f).CGColor;
+       Layer.BorderWidth = 2;
+
+ _thumbView = new UIView
+         {
+     BackgroundColor = UIColor.FromRGBA(200, 200, 200, 200),
+      Frame = new CGRect(0, 0, 50, 50)
+            };
+        _thumbView.Layer.CornerRadius = 25;
+     _thumbView.Layer.BorderColor = UIColor.White.ColorWithAlpha(0.5f).CGColor;
+            _thumbView.Layer.BorderWidth = 2;
+       AddSubview(_thumbView);
+        }
+
+        public override void LayoutSubviews()
+        {
+            base.LayoutSubviews();
+            _centerPoint = new CGPoint(Bounds.Width / 2, Bounds.Height / 2);
+            _thumbView.Center = _centerPoint;
+        }
+
+      public override void TouchesBegan(NSSet touches, UIEvent? evt)
+        {
+ _isTracking = true;
+UpdateThumbPosition(touches);
+  }
+
+        public override void TouchesMoved(NSSet touches, UIEvent? evt)
+        {
+        if (_isTracking)
+                UpdateThumbPosition(touches);
+        }
+
+        public override void TouchesEnded(NSSet touches, UIEvent? evt)
+        {
+ _isTracking = false;
+         ResetThumb();
+        }
+
+        public override void TouchesCancelled(NSSet touches, UIEvent? evt)
+        {
+            _isTracking = false;
+    ResetThumb();
+   }
+
+    private void UpdateThumbPosition(NSSet touches)
+        {
+        if (touches.AnyObject is not UITouch touch) return;
+
+var location = touch.LocationInView(this);
+            var deltaX = location.X - _centerPoint.X;
+          var deltaY = location.Y - _centerPoint.Y;
+    var distance = (nfloat)Math.Sqrt((double)(deltaX * deltaX + deltaY * deltaY));
+
+            if (distance > _maxDistance)
+    {
+          var scale = _maxDistance / distance;
+         deltaX = deltaX * scale;
+        deltaY = deltaY * scale;
+   }
+
+            _thumbView.Center = new CGPoint(_centerPoint.X + deltaX, _centerPoint.Y + deltaY);
+
+      var normalizedX = (float)(deltaX / _maxDistance);
+         var normalizedY = (float)(deltaY / _maxDistance);
+OnStickMoved?.Invoke(normalizedX, normalizedY);
+        }
+
+        private void ResetThumb()
+        {
+   UIView.Animate(0.15, () => _thumbView.Center = _centerPoint);
+            OnStickMoved?.Invoke(0, 0);
+    }
     }
 }
