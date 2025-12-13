@@ -10,203 +10,221 @@ namespace gaming_hub.ViewControllers
     {
         private UserData _userData = null!;
 
-    public override void ViewDidLoad()
-    {
-  base.ViewDidLoad();
-   Title = "Settings";
-      if (NavigationController != null)
-     NavigationController.NavigationBar.PrefersLargeTitles = true;
-       TableView = new UITableView(View!.Bounds, UITableViewStyle.InsetGrouped);
- LoadData();
-      }
-
-   public override void ViewWillAppear(bool animated)
+     public override void ViewDidLoad()
    {
-          base.ViewWillAppear(animated);
+  base.ViewDidLoad();
+Title = "Settings";
+  if (NavigationController != null)
+     NavigationController.NavigationBar.PrefersLargeTitles = true;
+     TableView = new UITableView(View!.Bounds, UITableViewStyle.InsetGrouped);
+          LoadData();
+        }
+
+        public override void ViewWillAppear(bool animated)
+        {
+       base.ViewWillAppear(animated);
             LoadData();
         }
 
         private async void LoadData()
-     {
-            _userData = await DatabaseService.Instance.GetUserDataAsync();
-     TableView.ReloadData();
-        }
+        {
+   _userData = await DatabaseService.Instance.GetUserDataAsync();
+       TableView.ReloadData();
+ }
 
-        public override nint NumberOfSections(UITableView tableView) => 4;
+        public override nint NumberOfSections(UITableView tableView) => 5;
 
         public override nint RowsInSection(UITableView tableView, nint section) => section switch
-        {
-  0 => 3,
-      1 => 1,
-     2 => 3,
-   3 => 3,
-            _ => 0
+      {
+            0 => 3,  // Connected Accounts
+ 1 => 1,  // Remote PC
+          2 => 1,  // IGDB API
+            3 => 3,  // Preferences
+       4 => 3,  // About
+          _ => 0
         };
 
         public override string TitleForHeader(UITableView tableView, nint section) => section switch
         {
             0 => "Connected Accounts",
-            1 => "Remote PC",
-    2 => "Preferences",
-            3 => "About Synktra",
-            _ => ""
-        };
+    1 => "Remote PC",
+   2 => "Game Database (IGDB)",
+       3 => "Preferences",
+            4 => "About Synktra",
+   _ => ""
+     };
 
         public override string TitleForFooter(UITableView tableView, nint section)
-        {
-            if (section == 3) return "© 2025 Scriptaxy. All rights reserved.";
+     {
+            if (section == 2)
+    return IGDBService.Instance.IsConfigured 
+       ? "IGDB provides high-quality game data for upcoming releases."
+              : "Configure IGDB for better upcoming games data. Get credentials from dev.twitch.tv";
+ if (section == 4) return "© 2025 Scriptaxy. All rights reserved.";
             return "";
         }
 
-     public override UITableViewCell GetCell(UITableView tableView, NSIndexPath indexPath)
+        public override UITableViewCell GetCell(UITableView tableView, NSIndexPath indexPath)
         {
-         var cell = new UITableViewCell(UITableViewCellStyle.Value1, null);
+            var cell = new UITableViewCell(UITableViewCellStyle.Value1, null);
 
-     switch (indexPath.Section)
-    {
-            case 0:
-                 if (indexPath.Row == 0)
-   {
-   cell.TextLabel!.Text = "Steam";
-          cell.ImageView!.Image = UIImage.GetSystemImage("gamecontroller.fill");
-     cell.ImageView.TintColor = UIColor.FromRGB(27, 40, 56);
-            var isConnected = !string.IsNullOrEmpty(_userData?.SteamId);
-     cell.DetailTextLabel!.Text = isConnected ? "Connected" : "Not Connected";
-       cell.DetailTextLabel.TextColor = isConnected ? UIColor.SystemGreen : UIColor.SecondaryLabel;
-  cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
-     }
-   else if (indexPath.Row == 1)
-           {
-        cell.TextLabel!.Text = "Epic Games";
-  cell.ImageView!.Image = UIImage.GetSystemImage("e.square.fill");
-   cell.ImageView.TintColor = UIColor.Black;
-      var isConnected = !string.IsNullOrEmpty(_userData?.EpicAccountId);
-          cell.DetailTextLabel!.Text = isConnected ? "Connected" : "Not Connected";
-               cell.DetailTextLabel.TextColor = isConnected ? UIColor.SystemGreen : UIColor.SecondaryLabel;
-             cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
-    }
-               else
-   {
-     cell.TextLabel!.Text = "GOG Galaxy";
-                cell.ImageView!.Image = UIImage.GetSystemImage("g.circle.fill");
-        cell.ImageView.TintColor = UIColor.FromRGB(134, 50, 179);
-      var isConnected = !string.IsNullOrEmpty(_userData?.GogAccessToken);
-         cell.DetailTextLabel!.Text = isConnected ? "Connected" : "Not Connected";
-    cell.DetailTextLabel.TextColor = isConnected ? UIColor.SystemGreen : UIColor.SecondaryLabel;
-              cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
-   }
-               break;
-
-                case 1:
-        cell.TextLabel!.Text = "Configure Remote PC";
-       cell.ImageView!.Image = UIImage.GetSystemImage("desktopcomputer");
-      cell.ImageView.TintColor = UIColor.SystemBlue;
-   cell.DetailTextLabel!.Text = string.IsNullOrEmpty(_userData?.RemotePCHost) ? "Not Configured" : _userData.RemotePCHost;
-      cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
-          break;
-
-       case 2:
-  if (indexPath.Row == 0)
-            {
-        cell.TextLabel!.Text = "Dark Mode";
-          cell.ImageView!.Image = UIImage.GetSystemImage("moon.fill");
-              cell.ImageView.TintColor = UIColor.SystemPurple;
-          var toggle = new UISwitch { On = _userData?.DarkModeEnabled ?? true };
-         toggle.ValueChanged += async (s, e) =>
-     {
-      if (_userData != null)
-    {
-     _userData.DarkModeEnabled = toggle.On;
-     await DatabaseService.Instance.SaveUserDataAsync(_userData);
-   SceneDelegate.Current?.ApplyTheme(toggle.On);
-            }
-    };
-      cell.AccessoryView = toggle;
-          cell.SelectionStyle = UITableViewCellSelectionStyle.None;
-    }
-     else if (indexPath.Row == 1)
- {
-       cell.TextLabel!.Text = "Deal Alerts";
-     cell.ImageView!.Image = UIImage.GetSystemImage("bell.fill");
-    cell.ImageView.TintColor = UIColor.SystemOrange;
-           var toggle = new UISwitch { On = _userData?.DealAlertsEnabled ?? true };
- toggle.ValueChanged += async (s, e) =>
-      {
-   if (_userData != null)
-         {
-        _userData.DealAlertsEnabled = toggle.On;
-             await DatabaseService.Instance.SaveUserDataAsync(_userData);
-           }
-      };
-  cell.AccessoryView = toggle;
-        cell.SelectionStyle = UITableViewCellSelectionStyle.None;
-      }
-     else
-        {
- cell.TextLabel!.Text = "Deal Threshold";
-          cell.ImageView!.Image = UIImage.GetSystemImage("tag.fill");
-          cell.ImageView.TintColor = UIColor.SystemGreen;
-    cell.DetailTextLabel!.Text = $"{_userData?.DealThreshold ?? 50}% off";
-    cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
-   }
-   break;
-
-              case 3:
-   if (indexPath.Row == 0)
-    {
-   cell.TextLabel!.Text = "Version";
-                 cell.ImageView!.Image = UIImage.GetSystemImage("info.circle.fill");
-               cell.ImageView.TintColor = UIColor.SystemGray;
-      cell.DetailTextLabel!.Text = "1.0.0";
-     cell.SelectionStyle = UITableViewCellSelectionStyle.None;
-            }
-  else if (indexPath.Row == 1)
+        switch (indexPath.Section)
+          {
+         case 0:
+             if (indexPath.Row == 0)
   {
-               cell.TextLabel!.Text = "Created by";
-               cell.ImageView!.Image = UIImage.GetSystemImage("person.fill");
- cell.ImageView.TintColor = UIColor.SystemIndigo;
-              cell.DetailTextLabel!.Text = "Scriptaxy";
-  cell.SelectionStyle = UITableViewCellSelectionStyle.None;
-       }
-      else
-   {
-           cell.TextLabel!.Text = "Rate App";
-    cell.ImageView!.Image = UIImage.GetSystemImage("star.fill");
-    cell.ImageView.TintColor = UIColor.SystemYellow;
-              cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
-        }
+             cell.TextLabel!.Text = "Steam";
+     cell.ImageView!.Image = UIImage.GetSystemImage("gamecontroller.fill");
+         cell.ImageView.TintColor = UIColor.FromRGB(27, 40, 56);
+       var isConnected = !string.IsNullOrEmpty(_userData?.SteamId);
+      cell.DetailTextLabel!.Text = isConnected ? "Connected" : "Not Connected";
+  cell.DetailTextLabel.TextColor = isConnected ? UIColor.SystemGreen : UIColor.SecondaryLabel;
+   cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
+          }
+      else if (indexPath.Row == 1)
+    {
+      cell.TextLabel!.Text = "Epic Games";
+            cell.ImageView!.Image = UIImage.GetSystemImage("e.square.fill");
+         cell.ImageView.TintColor = UIColor.Black;
+               var isConnected = !string.IsNullOrEmpty(_userData?.EpicAccountId);
+   cell.DetailTextLabel!.Text = isConnected ? "Connected" : "Not Connected";
+        cell.DetailTextLabel.TextColor = isConnected ? UIColor.SystemGreen : UIColor.SecondaryLabel;
+    cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
+          }
+        else
+       {
+          cell.TextLabel!.Text = "GOG Galaxy";
+    cell.ImageView!.Image = UIImage.GetSystemImage("g.circle.fill");
+           cell.ImageView.TintColor = UIColor.FromRGB(134, 50, 179);
+        var isConnected = !string.IsNullOrEmpty(_userData?.GogAccessToken);
+       cell.DetailTextLabel!.Text = isConnected ? "Connected" : "Not Connected";
+            cell.DetailTextLabel.TextColor = isConnected ? UIColor.SystemGreen : UIColor.SecondaryLabel;
+      cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
+     }
+ break;
+
+      case 1:
+       cell.TextLabel!.Text = "Configure Remote PC";
+             cell.ImageView!.Image = UIImage.GetSystemImage("desktopcomputer");
+            cell.ImageView.TintColor = UIColor.SystemBlue;
+   cell.DetailTextLabel!.Text = string.IsNullOrEmpty(_userData?.RemotePCHost) ? "Not Configured" : _userData.RemotePCHost;
+    cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
+                break;
+
+      case 2:
+        cell.TextLabel!.Text = "IGDB API";
+                cell.ImageView!.Image = UIImage.GetSystemImage("list.bullet.rectangle");
+         cell.ImageView.TintColor = UIColor.SystemPurple;
+   cell.DetailTextLabel!.Text = IGDBService.Instance.IsConfigured ? "Configured" : "Not Configured";
+          cell.DetailTextLabel.TextColor = IGDBService.Instance.IsConfigured ? UIColor.SystemGreen : UIColor.SecondaryLabel;
+    cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
       break;
-            }
 
-  return cell;
+    case 3:
+      if (indexPath.Row == 0)
+          {
+      cell.TextLabel!.Text = "Dark Mode";
+   cell.ImageView!.Image = UIImage.GetSystemImage("moon.fill");
+         cell.ImageView.TintColor = UIColor.SystemPurple;
+          var toggle = new UISwitch { On = _userData?.DarkModeEnabled ?? true };
+             toggle.ValueChanged += async (s, e) =>
+   {
+     if (_userData != null)
+        {
+       _userData.DarkModeEnabled = toggle.On;
+              await DatabaseService.Instance.SaveUserDataAsync(_userData);
+          SceneDelegate.Current?.ApplyTheme(toggle.On);
+             }
+   };
+        cell.AccessoryView = toggle;
+           cell.SelectionStyle = UITableViewCellSelectionStyle.None;
+          }
+ else if (indexPath.Row == 1)
+          {
+       cell.TextLabel!.Text = "Deal Alerts";
+   cell.ImageView!.Image = UIImage.GetSystemImage("bell.fill");
+         cell.ImageView.TintColor = UIColor.SystemOrange;
+         var toggle = new UISwitch { On = _userData?.DealAlertsEnabled ?? true };
+  toggle.ValueChanged += async (s, e) =>
+        {
+               if (_userData != null)
+    {
+       _userData.DealAlertsEnabled = toggle.On;
+              await DatabaseService.Instance.SaveUserDataAsync(_userData);
+    }
+             };
+          cell.AccessoryView = toggle;
+        cell.SelectionStyle = UITableViewCellSelectionStyle.None;
+ }
+         else
+     {
+       cell.TextLabel!.Text = "Deal Threshold";
+          cell.ImageView!.Image = UIImage.GetSystemImage("tag.fill");
+  cell.ImageView.TintColor = UIColor.SystemGreen;
+      cell.DetailTextLabel!.Text = $"{_userData?.DealThreshold ?? 50}% off";
+     cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
+          }
+         break;
+
+        case 4:
+       if (indexPath.Row == 0)
+     {
+     cell.TextLabel!.Text = "Version";
+      cell.ImageView!.Image = UIImage.GetSystemImage("info.circle.fill");
+        cell.ImageView.TintColor = UIColor.SystemGray;
+       cell.DetailTextLabel!.Text = "1.0.0";
+     cell.SelectionStyle = UITableViewCellSelectionStyle.None;
+     }
+             else if (indexPath.Row == 1)
+     {
+             cell.TextLabel!.Text = "Created by";
+         cell.ImageView!.Image = UIImage.GetSystemImage("person.fill");
+               cell.ImageView.TintColor = UIColor.SystemIndigo;
+      cell.DetailTextLabel!.Text = "Scriptaxy";
+       cell.SelectionStyle = UITableViewCellSelectionStyle.None;
+     }
+       else
+         {
+              cell.TextLabel!.Text = "Rate App";
+         cell.ImageView!.Image = UIImage.GetSystemImage("star.fill");
+      cell.ImageView.TintColor = UIColor.SystemYellow;
+cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
+   }
+ break;
+}
+
+    return cell;
         }
 
- public override void RowSelected(UITableView tableView, NSIndexPath indexPath)
-        {
-    tableView.DeselectRow(indexPath, true);
+        public override void RowSelected(UITableView tableView, NSIndexPath indexPath)
+{
+            tableView.DeselectRow(indexPath, true);
 
    switch (indexPath.Section)
-            {
-         case 0:
+  {
+       case 0:
       if (indexPath.Row == 0)
-      NavigationController?.PushViewController(new SteamSettingsViewController(), true);
-            else if (indexPath.Row == 1)
-   NavigationController?.PushViewController(new EpicSettingsViewController(), true);
-      else
-     NavigationController?.PushViewController(new GOGSettingsViewController(), true);
-  break;
-    case 1:
-        NavigationController?.PushViewController(new RemotePCSettingsViewController(), true);
-        break;
-            case 2:
-         if (indexPath.Row == 2)
-       ShowDealThresholdPicker();
-         break;
-    case 3:
-       if (indexPath.Row == 2)
-         RequestAppRating();
+            NavigationController?.PushViewController(new SteamSettingsViewController(), true);
+    else if (indexPath.Row == 1)
+    NavigationController?.PushViewController(new EpicSettingsViewController(), true);
+     else
+        NavigationController?.PushViewController(new GOGSettingsViewController(), true);
+      break;
+                case 1:
+             NavigationController?.PushViewController(new RemotePCSettingsViewController(), true);
+                break;
+   case 2:
+NavigationController?.PushViewController(new IGDBSettingsViewController(), true);
            break;
-   }
+   case 3:
+    if (indexPath.Row == 2)
+  ShowDealThresholdPicker();
+  break;
+    case 4:
+           if (indexPath.Row == 2)
+                 RequestAppRating();
+         break;
+  }
         }
 
         private void RequestAppRating()
@@ -1044,5 +1062,224 @@ _webView.LoadRequest(new NSUrlRequest(new NSUrl(GOGService.Instance.GetAuthoriza
         public override void DidStartProvisionalNavigation(WKWebView webView, WKNavigation navigation) => _parent._loading.StartAnimating();
      public override void DidFinishNavigation(WKWebView webView, WKNavigation navigation) => _parent._loading.StopAnimating();
         }
+    }
+
+/// <summary>
+  /// IGDB API Settings View Controller
+/// </summary>
+    public class IGDBSettingsViewController : UITableViewController
+    {
+        private UITextField _clientIdField = null!;
+        private UITextField _clientSecretField = null!;
+        private bool _isConfigured;
+  private bool _isTesting;
+
+    public override void ViewDidLoad()
+        {
+  base.ViewDidLoad();
+       Title = "IGDB API";
+      TableView = new UITableView(View!.Bounds, UITableViewStyle.InsetGrouped);
+      _isConfigured = IGDBService.Instance.IsConfigured;
+        }
+
+        public override nint NumberOfSections(UITableView tableView) => _isConfigured ? 3 : 2;
+
+  public override nint RowsInSection(UITableView tableView, nint section)
+        {
+    if (_isConfigured)
+      return section switch { 0 => 1, 1 => 1, 2 => 1, _ => 0 };
+ return section switch { 0 => 2, 1 => 1, _ => 0 };
+        }
+
+     public override string TitleForHeader(UITableView tableView, nint section)
+        {
+  if (_isConfigured)
+       return section switch { 0 => "Status", 1 => "Actions", 2 => "Reset", _ => "" };
+            return section switch { 0 => "Twitch API Credentials", 1 => "Actions", _ => "" };
+        }
+
+        public override string TitleForFooter(UITableView tableView, nint section)
+   {
+            if (!_isConfigured && section == 0)
+    return "IGDB uses Twitch authentication. Create an app at dev.twitch.tv/console and copy the Client ID and Secret.";
+            if (_isConfigured && section == 0)
+       return "IGDB is configured. Upcoming releases will use IGDB data.";
+        return "";
+        }
+
+public override UITableViewCell GetCell(UITableView tableView, NSIndexPath indexPath)
+   {
+            var cell = new UITableViewCell(UITableViewCellStyle.Value1, null);
+
+  if (_isConfigured)
+            {
+              switch (indexPath.Section)
+          {
+   case 0:
+        cell.TextLabel!.Text = "IGDB Status";
+          cell.DetailTextLabel!.Text = "Configured";
+  cell.DetailTextLabel.TextColor = UIColor.SystemGreen;
+        cell.ImageView!.Image = UIImage.GetSystemImage("checkmark.circle.fill");
+           cell.ImageView.TintColor = UIColor.SystemGreen;
+     cell.SelectionStyle = UITableViewCellSelectionStyle.None;
+     break;
+        case 1:
+         cell.TextLabel!.Text = _isTesting ? "Testing..." : "Test Connection";
+              cell.TextLabel.TextColor = UIColor.SystemBlue;
+        cell.TextLabel.TextAlignment = UITextAlignment.Center;
+          if (_isTesting)
+         {
+       var spinner = new UIActivityIndicatorView(UIActivityIndicatorViewStyle.Medium);
+   spinner.StartAnimating();
+        cell.AccessoryView = spinner;
+         }
+   break;
+   case 2:
+         cell.TextLabel!.Text = "Remove Configuration";
+   cell.TextLabel.TextColor = UIColor.SystemRed;
+          cell.TextLabel.TextAlignment = UITextAlignment.Center;
+       break;
+          }
+            }
+    else
+    {
+    if (indexPath.Section == 0)
+    {
+               cell = new UITableViewCell(UITableViewCellStyle.Default, null);
+ cell.SelectionStyle = UITableViewCellSelectionStyle.None;
+
+                    var textField = new UITextField(new CGRect(120, 12, tableView.Frame.Width - 140, 24))
+     {
+         AutocorrectionType = UITextAutocorrectionType.No,
+            AutocapitalizationType = UITextAutocapitalizationType.None,
+       ClearButtonMode = UITextFieldViewMode.WhileEditing
+      };
+
+        if (indexPath.Row == 0)
+           {
+               cell.TextLabel!.Text = "Client ID";
+      _clientIdField = textField;
+    textField.Placeholder = "Your Twitch Client ID";
+           }
+  else
+         {
+    cell.TextLabel!.Text = "Client Secret";
+     _clientSecretField = textField;
+       textField.Placeholder = "Your Twitch Client Secret";
+             textField.SecureTextEntry = true;
+       }
+ cell.ContentView.AddSubview(textField);
+         }
+  else
+            {
+     cell.TextLabel!.Text = "Save & Connect";
+     cell.TextLabel.TextColor = UIColor.SystemBlue;
+  cell.TextLabel.TextAlignment = UITextAlignment.Center;
+       }
+   }
+
+            return cell;
+      }
+
+    public override void RowSelected(UITableView tableView, NSIndexPath indexPath)
+        {
+          tableView.DeselectRow(indexPath, true);
+
+   if (_isConfigured)
+            {
+         if (indexPath.Section == 1)
+             TestConnection();
+            else if (indexPath.Section == 2)
+               RemoveConfiguration();
+       }
+else
+  {
+        if (indexPath.Section == 1)
+        SaveConfiguration();
+          }
+}
+
+        private async void SaveConfiguration()
+   {
+   var clientId = _clientIdField?.Text?.Trim();
+            var clientSecret = _clientSecretField?.Text?.Trim();
+
+         if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
+{
+      ShowAlert("Missing Credentials", "Please enter both Client ID and Client Secret.");
+   return;
+ }
+
+ IGDBService.Instance.Configure(clientId, clientSecret);
+
+     // Test the connection
+   _isTesting = true;
+ TableView.ReloadData();
+
+          try
+            {
+ var releases = await IGDBService.Instance.GetUpcomingReleasesAsync(5);
+      if (releases.Count > 0)
+            {
+        _isConfigured = true;
+         TableView.ReloadData();
+ShowAlert("Success!", $"IGDB connected successfully. Found {releases.Count} upcoming releases.");
+        }
+  else
+       {
+       ShowAlert("Connection Issue", "Connected but no data returned. Check your credentials.");
+       }
+    }
+          catch (Exception ex)
+{
+      ShowAlert("Connection Failed", $"Could not connect to IGDB: {ex.Message}");
+    }
+            finally
+            {
+          _isTesting = false;
+    TableView.ReloadData();
+         }
+ }
+
+        private async void TestConnection()
+  {
+        _isTesting = true;
+     TableView.ReloadData();
+
+            try
+   {
+           var releases = await IGDBService.Instance.GetUpcomingReleasesAsync(10);
+                ShowAlert("Connection OK", $"Successfully fetched {releases.Count} upcoming releases from IGDB!");
+            }
+     catch (Exception ex)
+            {
+     ShowAlert("Test Failed", ex.Message);
+ }
+      finally
+    {
+         _isTesting = false;
+                TableView.ReloadData();
+}
+        }
+
+        private void RemoveConfiguration()
+        {
+            var alert = UIAlertController.Create("Remove IGDB?", "This will remove your IGDB API credentials.", UIAlertControllerStyle.Alert);
+         alert.AddAction(UIAlertAction.Create("Cancel", UIAlertActionStyle.Cancel, null));
+       alert.AddAction(UIAlertAction.Create("Remove", UIAlertActionStyle.Destructive, _ =>
+     {
+      IGDBService.Instance.Configure("", "");
+          _isConfigured = false;
+    TableView.ReloadData();
+       }));
+            PresentViewController(alert, true, null);
+      }
+
+ private void ShowAlert(string title, string message)
+   {
+            var alert = UIAlertController.Create(title, message, UIAlertControllerStyle.Alert);
+         alert.AddAction(UIAlertAction.Create("OK", UIAlertActionStyle.Default, null));
+         PresentViewController(alert, true, null);
+  }
     }
 }

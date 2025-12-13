@@ -198,386 +198,383 @@ namespace gaming_hub.Services
    }
 
  /// <summary>
-        /// Get upcoming game releases - focuses on mainstream games only
-        /// </summary>
+        /// Get upcoming game releases - uses IGDB as primary source, falls back to Epic/Steam
+ /// </summary>
         public async Task<List<UpcomingRelease>> GetUpcomingReleasesAsync(int page = 1, int pageSize = 20)
-        {
-            var releases = new List<UpcomingRelease>();
-      var seenGames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-       // Source 1: Epic Games upcoming free games (most reliable, curated)
-          try
-      {
-      var epicUrl = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US";
-        var response = await _httpClient.GetStringAsync(epicUrl);
-           var json = JObject.Parse(response);
-     var elements = json["data"]?["Catalog"]?["searchStore"]?["elements"] as JArray;
-
-      if (elements != null)
-     {
-      foreach (var item in elements)
-  {
-        var title = item["title"]?.ToString();
-       var description = item["description"]?.ToString();
-     var seller = item["seller"]?["name"]?.ToString();
-  
-         if (string.IsNullOrEmpty(title) || seenGames.Contains(title)) continue;
-         if (IsNsfw(title, description, seller)) continue;
-
-        var promotions = item["promotions"];
-  var upcomingPromos = promotions?["upcomingPromotionalOffers"] as JArray;
-
-             if (upcomingPromos != null && upcomingPromos.Count > 0)
-            {
-            var promoOffers = upcomingPromos[0]?["promotionalOffers"] as JArray;
-      if (promoOffers != null && promoOffers.Count > 0)
-        {
-   var startDateStr = promoOffers[0]?["startDate"]?.ToString();
-           if (DateTime.TryParse(startDateStr, out var startDate) && startDate > DateTime.UtcNow)
-      {
- seenGames.Add(title);
-
-        var keyImages = item["keyImages"] as JArray;
-  var imageUrl = keyImages?.FirstOrDefault(i =>
-      i["type"]?.ToString() == "OfferImageWide" ||
-        i["type"]?.ToString() == "DieselStoreFrontWide" ||
-     i["type"]?.ToString() == "Thumbnail")?["url"]?.ToString();
-
-       releases.Add(new UpcomingRelease
    {
-        ExternalId = item["id"]?.ToString() ?? "",
-    GameName = title,
-     CoverImageUrl = imageUrl ?? keyImages?.FirstOrDefault()?["url"]?.ToString(),
-       ReleaseDate = startDate.ToLocalTime(),
-      IsExactDate = true,
-          Description = $"Free {startDate.ToLocalTime():MMM d}",
-         Platforms = "Epic Games"
-          });
-           }
-  }
-          }
+            var releases = new List<UpcomingRelease>();
+         var seenGames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-          if (releases.Count >= pageSize) break;
-             }
-    }
-}
-  catch (Exception ex)
+            // Primary Source: IGDB (best data quality for upcoming games)
+            if (IGDBService.Instance.IsConfigured)
+        {
+      try
             {
-         Console.WriteLine($"Epic upcoming failed: {ex.Message}");
+     Console.WriteLine("Fetching upcoming releases from IGDB...");
+       var igdbReleases = await IGDBService.Instance.GetUpcomingReleasesAsync(pageSize * 2);
+
+    foreach (var release in igdbReleases)
+    {
+  if (seenGames.Contains(release.GameName)) continue;
+  if (IsNsfw(release.GameName, release.Description)) continue;
+
+              seenGames.Add(release.GameName);
+            releases.Add(release);
+
+            if (releases.Count >= pageSize) break;
+      }
+
+      Console.WriteLine($"IGDB: Found {releases.Count} upcoming releases");
+    }
+           catch (Exception ex)
+  {
+     Console.WriteLine($"IGDB upcoming failed: {ex.Message}");
+      }
+     }
+
+   // Fallback Source 1: Epic Games upcoming free games
+            if (releases.Count < pageSize)
+            {
+                try
+         {
+        var epicUrl = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US";
+       var response = await _httpClient.GetStringAsync(epicUrl);
+           var json = JObject.Parse(response);
+           var elements = json["data"]?["Catalog"]?["searchStore"]?["elements"] as JArray;
+
+          if (elements != null)
+   {
+        foreach (var item in elements)
+           {
+          var title = item["title"]?.ToString();
+             var description = item["description"]?.ToString();
+          var seller = item["seller"]?["name"]?.ToString();
+
+    if (string.IsNullOrEmpty(title) || seenGames.Contains(title)) continue;
+   if (IsNsfw(title, description, seller)) continue;
+
+       var promotions = item["promotions"];
+   var upcomingPromos = promotions?["upcomingPromotionalOffers"] as JArray;
+
+         if (upcomingPromos != null && upcomingPromos.Count > 0)
+        {
+               var promoOffers = upcomingPromos[0]?["promotionalOffers"] as JArray;
+       if (promoOffers != null && promoOffers.Count > 0)
+           {
+     var startDateStr = promoOffers[0]?["startDate"]?.ToString();
+       if (DateTime.TryParse(startDateStr, out var startDate) && startDate > DateTime.UtcNow)
+           {
+           seenGames.Add(title);
+
+           var keyImages = item["keyImages"] as JArray;
+      var imageUrl = keyImages?.FirstOrDefault(i =>
+         i["type"]?.ToString() == "OfferImageWide" ||
+  i["type"]?.ToString() == "DieselStoreFrontWide" ||
+            i["type"]?.ToString() == "Thumbnail")?["url"]?.ToString();
+
+        releases.Add(new UpcomingRelease
+       {
+           ExternalId = item["id"]?.ToString() ?? "",
+       GameName = title,
+       CoverImageUrl = imageUrl ?? keyImages?.FirstOrDefault()?["url"]?.ToString(),
+             ReleaseDate = startDate.ToLocalTime(),
+         IsExactDate = true,
+               Description = $"Free {startDate.ToLocalTime():MMM d}",
+   Platforms = "Epic Games"
+       });
+         }
+    }
+             }
+
+        if (releases.Count >= pageSize) break;
+     }
+    }
+         }
+         catch (Exception ex)
+        {
+  Console.WriteLine($"Epic upcoming failed: {ex.Message}");
+ }
             }
 
-            // Source 2: Steam featured coming soon (curated by Valve)
-      if (releases.Count < pageSize)
-     {
-            try
-     {
+            // Fallback Source 2: Steam featured coming soon
+ if (releases.Count < pageSize)
+      {
+    try
+      {
       var featuredUrl = "https://store.steampowered.com/api/featuredcategories";
-     var response = await _httpClient.GetStringAsync(featuredUrl);
+    var response = await _httpClient.GetStringAsync(featuredUrl);
        var json = JObject.Parse(response);
 
-        var comingSoon = json["coming_soon"]?["items"] as JArray;
-       if (comingSoon != null)
- {
-      foreach (var item in comingSoon)
-     {
-        var name = item["name"]?.ToString();
-  if (string.IsNullOrEmpty(name) || seenGames.Contains(name)) continue;
+         var comingSoon = json["coming_soon"]?["items"] as JArray;
+              if (comingSoon != null)
+    {
+ foreach (var item in comingSoon)
+       {
+       var name = item["name"]?.ToString();
+          if (string.IsNullOrEmpty(name) || seenGames.Contains(name)) continue;
      if (IsNsfw(name)) continue;
 
-   seenGames.Add(name);
+        seenGames.Add(name);
       var appId = item["id"]?.ToString();
-        var finalPrice = item["final_price"]?.Value<int>() ?? 0;
+          var finalPrice = item["final_price"]?.Value<int>() ?? 0;
        var priceText = finalPrice > 0 ? $"${finalPrice / 100.0:F2}" : "TBA";
 
-       releases.Add(new UpcomingRelease
-           {
-            ExternalId = appId ?? "",
- GameName = name,
-     CoverImageUrl = item["large_capsule_image"]?.ToString() ??
-       $"https://cdn.akamai.steamstatic.com/steam/apps/{appId}/header.jpg",
-         ReleaseDate = DateTime.Today.AddDays(14),
-            IsExactDate = false,
-    Description = priceText,
+         releases.Add(new UpcomingRelease
+                {
+               ExternalId = appId ?? "",
+          GameName = name,
+           CoverImageUrl = item["large_capsule_image"]?.ToString() ??
+      $"https://cdn.akamai.steamstatic.com/steam/apps/{appId}/header.jpg",
+             ReleaseDate = DateTime.Today.AddDays(14),
+           IsExactDate = false,
+        Description = priceText,
         Platforms = "Steam"
-       });
+          });
 
      if (releases.Count >= pageSize) break;
         }
-          }
-      }
-      catch (Exception ex)
-           {
-          Console.WriteLine($"Steam featured failed: {ex.Message}");
-          }
-            }
-
-            // Source 3: Steam top wishlisted (popular anticipated games)
-    if (releases.Count < pageSize)
-   {
-            try
-           {
-           var wishlistUrl = "https://store.steampowered.com/api/featuredcategories";
-            var response = await _httpClient.GetStringAsync(wishlistUrl);
-    var json = JObject.Parse(response);
-
-         var topSellers = json["top_sellers"]?["items"] as JArray;
-  if (topSellers != null)
-          {
-      foreach (var item in topSellers)
-              {
-   var name = item["name"]?.ToString();
-        if (string.IsNullOrEmpty(name) || seenGames.Contains(name)) continue;
-     if (IsNsfw(name)) continue;
-
-       // Only add if it looks like a real game
-    var discountPercent = item["discount_percent"]?.Value<int>() ?? 0;
-            if (discountPercent > 0) // On sale = already released, skip
-        continue;
-
-                seenGames.Add(name);
-    var appId = item["id"]?.ToString();
-
-         releases.Add(new UpcomingRelease
-   {
-           ExternalId = appId ?? "",
-    GameName = name,
-       CoverImageUrl = $"https://cdn.akamai.steamstatic.com/steam/apps/{appId}/header.jpg",
-          ReleaseDate = DateTime.Today.AddDays(30),
-         IsExactDate = false,
-            Description = "Popular",
-            Platforms = "Steam"
-            });
-
-      if (releases.Count >= pageSize) break;
-                }
-               }
-          }
-             catch (Exception ex)
-          {
-       Console.WriteLine($"Steam wishlist failed: {ex.Message}");
          }
+ }
+                catch (Exception ex)
+      {
+           Console.WriteLine($"Steam featured failed: {ex.Message}");
+      }
+      }
+
+         if (releases.Count == 0)
+            {
+                releases.Add(new UpcomingRelease
+    {
+          ExternalId = "placeholder",
+  GameName = "No upcoming releases found",
+          Description = "Configure IGDB API or pull to refresh",
+          ReleaseDate = DateTime.Today,
+     IsExactDate = false,
+      Platforms = ""
+        });
             }
 
-            if (releases.Count == 0)
-            {
-    releases.Add(new UpcomingRelease
-         {
-         ExternalId = "placeholder",
-       GameName = "No upcoming releases found",
-           Description = "Pull to refresh",
-       ReleaseDate = DateTime.Today,
-          IsExactDate = false,
-       Platforms = ""
-});
+            return releases
+                .Where(r => r.ExternalId != "placeholder" || releases.Count == 1)
+       .OrderBy(r => r.ReleaseDate)
+       .ThenBy(r => r.GameName)
+        .ToList();
         }
-
-   return releases
-           .Where(r => r.ExternalId != "placeholder" || releases.Count == 1)
-                .OrderBy(r => r.ReleaseDate)
-    .ThenBy(r => r.GameName)
-          .ToList();
-      }
 
         /// <summary>
+        /// Get most anticipated games (uses IGDB)
+    /// </summary>
+    public async Task<List<UpcomingRelease>> GetMostAnticipatedAsync(int limit = 20)
+        {
+            if (IGDBService.Instance.IsConfigured)
+    {
+       return await IGDBService.Instance.GetMostAnticipatedAsync(limit);
+   }
+         
+  // Fallback to regular upcoming if IGDB not configured
+  return await GetUpcomingReleasesAsync(1, limit);
+        }
+
+      /// <summary>
         /// Get free games currently available
         /// </summary>
-  public async Task<List<Game>> GetFreeGamesAsync()
-{
-            var games = new List<Game>();
-   var seenGames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+   public async Task<List<Game>> GetFreeGamesAsync()
+  {
+ var games = new List<Game>();
+      var seenGames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            try
-   {
-            var url = $"{CheapSharkBaseUrl}/deals?upperPrice=0&pageSize=20";
-      var response = await _httpClient.GetStringAsync(url);
-        var json = JArray.Parse(response);
-
-   foreach (var item in json)
-        {
-    var gameName = item["title"]?.ToString() ?? "Unknown";
-              if (seenGames.Contains(gameName)) continue;
-   if (IsNsfw(gameName)) continue;
-  
-          var metacritic = item["metacriticScore"]?.Value<double?>();
- var steamRating = item["steamRatingPercent"]?.Value<double?>();
- if (!IsQualityGame(gameName, metacritic, steamRating)) continue;
-         
-            seenGames.Add(gameName);
-
-     games.Add(new Game
-       {
-     ExternalId = item["gameID"]?.ToString(),
-              Name = gameName,
-            CoverImageUrl = item["thumb"]?.ToString(),
-           Platform = GamePlatform.Manual,
-     MetacriticScore = metacritic,
-  DateAdded = DateTime.UtcNow
-     });
-           }
-     }
-    catch (Exception ex)
-{
-     Console.WriteLine($"Error getting free games: {ex.Message}");
-        }
-
-       return games;
-     }
-
-      private static string? StripHtml(string? html)
-      {
-         if (string.IsNullOrEmpty(html)) return html;
- return System.Text.RegularExpressions.Regex.Replace(html, "<.*?>", string.Empty)
-        .Replace("&nbsp;", " ")
-        .Replace("&amp;", "&")
-         .Replace("&lt;", "<")
-           .Replace("&gt;", ">")
-         .Replace("&#39;", "'")
- .Replace("&quot;", "\"")
-           .Trim();
-        }
-
-        // ==================== Game Deals (CheapShark) ====================
-
-        public async Task<List<GameDeal>> GetDealsAsync(int pageNumber = 0, int pageSize = 60, string? storeId = null)
-      {
-          var deals = new List<GameDeal>();
-   try
- {
-       var url = $"{CheapSharkBaseUrl}/deals?pageNumber={pageNumber}&pageSize={pageSize}&onSale=1";
-      if (!string.IsNullOrEmpty(storeId))
-         url += $"&storeID={storeId}";
-
-          var response = await _httpClient.GetStringAsync(url);
+     try
+            {
+                var url = $"{CheapSharkBaseUrl}/deals?upperPrice=0&pageSize=20";
+                var response = await _httpClient.GetStringAsync(url);
  var json = JArray.Parse(response);
 
-     foreach (var item in json)
-    {
-    var gameName = item["title"]?.ToString() ?? "Unknown";
-  if (IsNsfw(gameName)) continue;
+                foreach (var item in json)
+     {
+          var gameName = item["title"]?.ToString() ?? "Unknown";
+    if (seenGames.Contains(gameName)) continue;
+       if (IsNsfw(gameName)) continue;
+             
+   var metacritic = item["metacriticScore"]?.Value<double?>();
+              var steamRating = item["steamRatingPercent"]?.Value<double?>();
+if (!IsQualityGame(gameName, metacritic, steamRating)) continue;
      
-     var metacritic = item["metacriticScore"]?.Value<double?>();
-       var steamRating = item["steamRatingPercent"]?.Value<double?>();
-            if (!IsQualityGame(gameName, metacritic, steamRating)) continue;
+               seenGames.Add(gameName);
 
-           deals.Add(new GameDeal
-    {
-      DealId = item["dealID"]?.ToString() ?? "",
-       GameName = gameName,
-         GameImageUrl = item["thumb"]?.ToString(),
-           StoreName = GetStoreName(item["storeID"]?.ToString()),
-   OriginalPrice = item["normalPrice"]?.Value<decimal>() ?? 0,
-     SalePrice = item["salePrice"]?.Value<decimal>() ?? 0,
-      DiscountPercent = (int)(item["savings"]?.Value<double>() ?? 0),
-     DealUrl = $"https://www.cheapshark.com/redirect?dealID={item["dealID"]}",
-   MetacriticScore = metacritic,
-            SteamRating = steamRating
-      });
-    }
-            }
-      catch (Exception ex)
+         games.Add(new Game
       {
-Console.WriteLine($"Error getting deals: {ex.Message}");
-}
-          return deals;
+          ExternalId = item["gameID"]?.ToString(),
+            Name = gameName,
+      CoverImageUrl = item["thumb"]?.ToString(),
+             Platform = GamePlatform.Manual,
+        MetacriticScore = metacritic,
+     DateAdded = DateTime.UtcNow
+                });
+                }
+    }
+      catch (Exception ex)
+  {
+        Console.WriteLine($"Error getting free games: {ex.Message}");
+            }
+
+    return games;
+ }
+
+        private static string? StripHtml(string? html)
+        {
+      if (string.IsNullOrEmpty(html)) return html;
+            return System.Text.RegularExpressions.Regex.Replace(html, "<.*?>", string.Empty)
+      .Replace("&nbsp;", " ")
+       .Replace("&amp;", "&")
+      .Replace("&lt;", "<")
+             .Replace("&gt;", ">")
+             .Replace("&#39;", "'")
+  .Replace("&quot;", "\"")
+    .Trim();
         }
 
-      public async Task<List<GameDeal>> SearchDealsAsync(string query)
-  {
-          var deals = new List<GameDeal>();
-  try
-    {
-      var url = $"{CheapSharkBaseUrl}/deals?title={Uri.EscapeDataString(query)}&onSale=1";
-      var response = await _httpClient.GetStringAsync(url);
-         var json = JArray.Parse(response);
+  // ==================== Game Deals (CheapShark) ====================
+
+        public async Task<List<GameDeal>> GetDealsAsync(int pageNumber = 0, int pageSize = 60, string? storeId = null)
+        {
+            var deals = new List<GameDeal>();
+            try
+            {
+                var url = $"{CheapSharkBaseUrl}/deals?pageNumber={pageNumber}&pageSize={pageSize}&onSale=1";
+      if (!string.IsNullOrEmpty(storeId))
+               url += $"&storeID={storeId}";
+
+    var response = await _httpClient.GetStringAsync(url);
+       var json = JArray.Parse(response);
+
+           foreach (var item in json)
+      {
+              var gameName = item["title"]?.ToString() ?? "Unknown";
+     if (IsNsfw(gameName)) continue;
+           
+         var metacritic = item["metacriticScore"]?.Value<double?>();
+          var steamRating = item["steamRatingPercent"]?.Value<double?>();
+      if (!IsQualityGame(gameName, metacritic, steamRating)) continue;
+
+            deals.Add(new GameDeal
+          {
+           DealId = item["dealID"]?.ToString() ?? "",
+             GameName = gameName,
+       GameImageUrl = item["thumb"]?.ToString(),
+            StoreName = GetStoreName(item["storeID"]?.ToString()),
+    OriginalPrice = item["normalPrice"]?.Value<decimal>() ?? 0,
+   SalePrice = item["salePrice"]?.Value<decimal>() ?? 0,
+             DiscountPercent = (int)(item["savings"]?.Value<double>() ?? 0),
+    DealUrl = $"https://www.cheapshark.com/redirect?dealID={item["dealID"]}",
+    MetacriticScore = metacritic,
+              SteamRating = steamRating
+    });
+        }
+         }
+            catch (Exception ex)
+         {
+         Console.WriteLine($"Error getting deals: {ex.Message}");
+     }
+   return deals;
+        }
+
+        public async Task<List<GameDeal>> SearchDealsAsync(string query)
+{
+            var deals = new List<GameDeal>();
+            try
+       {
+   var url = $"{CheapSharkBaseUrl}/deals?title={Uri.EscapeDataString(query)}&onSale=1";
+        var response = await _httpClient.GetStringAsync(url);
+      var json = JArray.Parse(response);
 
        foreach (var item in json)
-     {
-   var gameName = item["title"]?.ToString() ?? "Unknown";
-       if (IsNsfw(gameName)) continue;
+{
+                  var gameName = item["title"]?.ToString() ?? "Unknown";
+if (IsNsfw(gameName)) continue;
 
-deals.Add(new GameDeal
+ deals.Add(new GameDeal
         {
-          DealId = item["dealID"]?.ToString() ?? "",
-        GameName = gameName,
-    GameImageUrl = item["thumb"]?.ToString(),
-     StoreName = GetStoreName(item["storeID"]?.ToString()),
-          OriginalPrice = item["normalPrice"]?.Value<decimal>() ?? 0,
-SalePrice = item["salePrice"]?.Value<decimal>() ?? 0,
-              DiscountPercent = (int)(item["savings"]?.Value<double>() ?? 0),
-        DealUrl = $"https://www.cheapshark.com/redirect?dealID={item["dealID"]}",
-      MetacriticScore = item["metacriticScore"]?.Value<double?>(),
-SteamRating = item["steamRatingPercent"]?.Value<double?>()
+     DealId = item["dealID"]?.ToString() ?? "",
+         GameName = gameName,
+             GameImageUrl = item["thumb"]?.ToString(),
+               StoreName = GetStoreName(item["storeID"]?.ToString()),
+            OriginalPrice = item["normalPrice"]?.Value<decimal>() ?? 0,
+          SalePrice = item["salePrice"]?.Value<decimal>() ?? 0,
+  DiscountPercent = (int)(item["savings"]?.Value<double>() ?? 0),
+     DealUrl = $"https://www.cheapshark.com/redirect?dealID={item["dealID"]}",
+  MetacriticScore = item["metacriticScore"]?.Value<double?>(),
+    SteamRating = item["steamRatingPercent"]?.Value<double?>()
         });
-     }
-         }
-     catch (Exception ex)
-         {
-        Console.WriteLine($"Error searching deals: {ex.Message}");
+}
+       }
+catch (Exception ex)
+            {
+     Console.WriteLine($"Error searching deals: {ex.Message}");
      }
             return deals;
         }
 
         public async Task<List<GameDeal>> GetGameDealsAsync(string gameId)
         {
-            var deals = new List<GameDeal>();
-       try
-   {
-                var url = $"{CheapSharkBaseUrl}/games?id={gameId}";
-      var response = await _httpClient.GetStringAsync(url);
-  var json = JObject.Parse(response);
+         var deals = new List<GameDeal>();
+            try
+            {
+         var url = $"{CheapSharkBaseUrl}/games?id={gameId}";
+       var response = await _httpClient.GetStringAsync(url);
+         var json = JObject.Parse(response);
     var dealsList = json["deals"] as JArray;
 
-          if (dealsList != null)
-          {
-   var gameName = json["info"]?["title"]?.ToString() ?? "Unknown";
-        var thumb = json["info"]?["thumb"]?.ToString();
+    if (dealsList != null)
+     {
+    var gameName = json["info"]?["title"]?.ToString() ?? "Unknown";
+       var thumb = json["info"]?["thumb"]?.ToString();
 
-        foreach (var item in dealsList)
+     foreach (var item in dealsList)
       {
-           deals.Add(new GameDeal
-      {
-      DealId = item["dealID"]?.ToString() ?? "",
-         GameName = gameName,
-          GameImageUrl = thumb,
-          StoreName = GetStoreName(item["storeID"]?.ToString()),
-   OriginalPrice = item["retailPrice"]?.Value<decimal>() ?? 0,
-      SalePrice = item["price"]?.Value<decimal>() ?? 0,
-       DiscountPercent = (int)(item["savings"]?.Value<double>() ?? 0),
-     DealUrl = $"https://www.cheapshark.com/redirect?dealID={item["dealID"]}"
-           });
-   }
-     }
+          deals.Add(new GameDeal
+   {
+   DealId = item["dealID"]?.ToString() ?? "",
+     GameName = gameName,
+         GameImageUrl = thumb,
+        StoreName = GetStoreName(item["storeID"]?.ToString()),
+  OriginalPrice = item["retailPrice"]?.Value<decimal>() ?? 0,
+   SalePrice = item["price"]?.Value<decimal>() ?? 0,
+            DiscountPercent = (int)(item["savings"]?.Value<double>() ?? 0),
+                DealUrl = $"https://www.cheapshark.com/redirect?dealID={item["dealID"]}"
+      });
+                 }
+        }
             }
-      catch (Exception ex)
+       catch (Exception ex)
             {
-           Console.WriteLine($"Error getting game deals: {ex.Message}");
-          }
-  return deals;
-    }
+         Console.WriteLine($"Error getting game deals: {ex.Message}");
+       }
+         return deals;
+}
 
-      private static string GetStoreName(string? storeId) => storeId switch
+     private static string GetStoreName(string? storeId) => storeId switch
         {
-     "1" => "Steam",
- "2" => "GamersGate",
-        "3" => "GreenManGaming",
-         "7" => "GOG",
+        "1" => "Steam",
+  "2" => "GamersGate",
+ "3" => "GreenManGaming",
+     "7" => "GOG",
             "8" => "Origin",
     "11" => "Humble Store",
-      "13" => "Uplay",
-         "15" => "Fanatical",
-      "21" => "WinGameStore",
-    "23" => "GameBillet",
-"24" => "Voidu",
-        "25" => "Epic Games",
-          "27" => "Games Planet",
-    "28" => "Games Load",
-       "29" => "2Game",
-    "30" => "IndieGala",
-            "31" => "Blizzard",
-  "33" => "DLGamer",
-      "34" => "Noctre",
-            "35" => "DreamGame",
-_ => "Store"
+     "13" => "Uplay",
+      "15" => "Fanatical",
+  "21" => "WinGameStore",
+   "23" => "GameBillet",
+    "24" => "Voidu",
+       "25" => "Epic Games",
+        "27" => "Games Planet",
+            "28" => "Games Load",
+    "29" => "2Game",
+       "30" => "IndieGala",
+  "31" => "Blizzard",
+       "33" => "DLGamer",
+     "34" => "Noctre",
+        "35" => "DreamGame",
+            _ => "Store"
         };
-}
+    }
 }
