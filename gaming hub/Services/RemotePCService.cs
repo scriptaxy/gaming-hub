@@ -273,17 +273,17 @@ var allIps = Enumerable.Range(1, 254)
         }
 
       private string? GetLocalIPAddress()
-   {
-       try
+        {
+            try
             {
-     // This works best on iOS - creates a UDP socket to determine local IP
-       using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, 0);
-         socket.Connect("8.8.8.8", 65530);
-       if (socket.LocalEndPoint is IPEndPoint endPoint)
-          {
-  return endPoint.Address.ToString();
+                // This works best on iOS - creates a UDP socket to determine local IP
+                using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+                socket.Connect("8.8.8.8", 65530);
+                if (socket.LocalEndPoint is IPEndPoint endPoint)
+                {
+                    return endPoint.Address.ToString();
                 }
-       }
+            }
             catch { }
 
           try
@@ -352,20 +352,18 @@ var allIps = Enumerable.Range(1, 254)
         }
 
         public async Task<bool> PingAsync(string host, int port)
-   {
+        {
             try
-   {
-     using var client = new TcpClient();
-        var connectTask = client.ConnectAsync(host, port);
-         var delayTask = Task.Delay(3000);
-          var completedTask = await Task.WhenAny(connectTask, delayTask);
-
-     return completedTask == connectTask && client.Connected;
-     }
-  catch
-       {
-     return false;
-    }
+            {
+                using var client = new TcpClient();
+                using var cts = new CancellationTokenSource(3000);
+                await client.ConnectAsync(host, port, cts.Token);
+                return client.Connected;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         public async Task<bool> WakeOnLanAsync(string macAddress, string? broadcastAddress = null)

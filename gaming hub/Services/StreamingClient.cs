@@ -29,23 +29,40 @@ namespace gaming_hub.Services
 
       public async Task<bool> ConnectAsync(string host, int port)
         {
+            if (string.IsNullOrWhiteSpace(host))
+            {
+                OnError?.Invoke("Invalid host address");
+                return false;
+            }
+
+            if (port <= 0 || port > 65535)
+            {
+                OnError?.Invoke("Invalid port number");
+                return false;
+            }
+
             if (IsConnected)
-     {
-        await DisconnectAsync();
-   }
+            {
+                await DisconnectAsync();
+            }
 
- _host = host;
-      _port = port;
-     _cts = new CancellationTokenSource();
+            _host = host;
+            _port = port;
 
-        try
-  {
-     _webSocket = new ClientWebSocket();
-      var uri = new Uri($"ws://{host}:{port}/");
+            try
+            {
+                _webSocket = new ClientWebSocket();
+                _webSocket.Options.KeepAliveInterval = TimeSpan.FromSeconds(5);
+                var uri = new Uri($"ws://{host}:{port}/");
 
- Console.WriteLine($"Connecting to stream at {uri}");
+                Console.WriteLine($"Connecting to stream at {uri}");
 
-      await _webSocket.ConnectAsync(uri, _cts.Token);
+                // Use a separate timeout for connection only
+                using var connectionCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await _webSocket.ConnectAsync(uri, connectionCts.Token);
+
+                // Create long-lived token source for the connection lifecycle
+                _cts = new CancellationTokenSource();
 
  if (_webSocket.State == WebSocketState.Open)
                 {
@@ -89,9 +106,9 @@ namespace gaming_hub.Services
         }
 
         private async Task ReceiveFramesAsync()
- {
-var buffer = new byte[1024 * 1024]; // 1MB buffer for frames
-    var frameBuffer = new List<byte>();
+        {
+            var buffer = new byte[2 * 1024 * 1024]; // 2MB buffer for frames (increased for high-quality streams)
+            var frameBuffer = new List<byte>();
 
 try
        {

@@ -30,9 +30,12 @@ public class LowLatencyStreamService
     // Stream settings optimized for low latency
     private int _targetFps = 60;
     private int _quality = 40; // Lower quality = faster encoding
-  private int _width = 1280;
+    private int _width = 1280;
     private int _height = 720;
     private bool _useUdp = true; // UDP is faster but may lose frames
+    
+    // UDP packet size limit (actual UDP max is ~65507 bytes)
+    private const int MaxUdpPacketSize = 65000;
 
     public bool IsStreaming => _isStreaming;
     public int ClientCount 
@@ -66,26 +69,28 @@ public class LowLatencyStreamService
     private const int SM_CYSCREEN = 1;
 
     public async Task StartAsync(int wsPort = 5002, int udpPort = 5003)
-  {
+    {
         if (_isStreaming) return;
 
         _wsPort = wsPort;
         _udpPort = udpPort;
- _cts = new CancellationTokenSource();
+        _cts = new CancellationTokenSource();
 
-      try
-     {
-       // Initialize Desktop Duplication for GPU-accelerated capture
+        try
+        {
+            // Initialize Desktop Duplication for GPU-accelerated capture
             _duplicator = new DesktopDuplicator();
       
-        // Start UDP server for low-latency clients
- _udpServer = new UdpClient(_udpPort);
-    _ = Task.Run(() => ListenForUdpClientsAsync(_cts.Token));
+            // Start UDP server for low-latency clients
+            _udpServer = new UdpClient();
+            _udpServer.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            _udpServer.Client.Bind(new IPEndPoint(IPAddress.Any, _udpPort));
+            _ = Task.Run(() => ListenForUdpClientsAsync(_cts.Token));
 
             // Start WebSocket server for fallback
-     _httpListener = new HttpListener();
- _httpListener.Prefixes.Add($"http://*:{wsPort}/");
-    _httpListener.Start();
+            _httpListener = new HttpListener();
+            _httpListener.Prefixes.Add($"http://*:{wsPort}/");
+            _httpListener.Start();
             _ = Task.Run(() => AcceptWebSocketConnectionsAsync(_cts.Token));
 
 _isStreaming = true;
@@ -94,10 +99,11 @@ _isStreaming = true;
   // Start streaming frames
 _ = Task.Run(() => StreamFramesAsync(_cts.Token));
       }
-   catch (Exception ex)
+        catch (Exception ex)
         {
             Console.WriteLine($"Failed to start low-latency streaming: {ex.Message}");
             _isStreaming = false;
+            Stop(); // Clean up any partially started services
         }
     }
 
@@ -419,10 +425,10 @@ List<IPEndPoint> udpClientsCopy;
    udpClientsCopy = [.. _udpClients];
    }
 
-      // UDP has size limits, so we may need to fragment large frames
-   // For simplicity, we'll just send if under ~64KB
-            if (frameData.Length < 65000)
-       {
+            // UDP has size limits, so we may need to fragment large frames
+            // For simplicity, we'll just send if under ~64KB
+            if (frameData.Length < MaxUdpPacketSize)
+            {
      foreach (var client in udpClientsCopy)
     {
      try
