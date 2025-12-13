@@ -323,22 +323,22 @@ StreamLatencyText.Text = $"{streamService.TotalLatency:0}ms";
     private void UpdateNetworkInfo()
   {
    try
-  {
-            var port = _apiServer.IsRunning ? _apiServer.Port : SettingsManager.Load().Port;
-            var host = Dns.GetHostEntry(Dns.GetHostName());
+        {
+    var port = _apiServer.IsRunning ? _apiServer.Port : SettingsManager.Load().Port;
+        var host = Dns.GetHostEntry(Dns.GetHostName());
   foreach (var ip in host.AddressList)
-            {
-     if (ip.AddressFamily == AddressFamily.InterNetwork)
-     {
+        {
+                if (ip.AddressFamily == AddressFamily.InterNetwork)
+       {
            IpAddressText.Text = $"{ip}:{port}";
        LocalIpDisplay.Text = ip.ToString();
        ApiPortDisplay.Text = port.ToString();
-          return;
- }
+return;
+     }
             }
         }
-  catch { }
-        IpAddressText.Text = $"localhost:{_apiServer.Port}";
+        catch { }
+        IpAddressText.Text = $"0.0.0.0:{_apiServer.Port}";
     }
 
     private void UpdatePlatformStats()

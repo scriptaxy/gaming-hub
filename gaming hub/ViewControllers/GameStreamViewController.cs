@@ -25,11 +25,11 @@ namespace gaming_hub.ViewControllers
 
         public GameStreamViewController(string host, int port, string? authToken = null)
         {
-     _host = host;
+            _host = host;
     _port = port;
             _authToken = authToken;
-            ModalPresentationStyle = UIModalPresentationStyle.FullScreen;
-        }
+         ModalPresentationStyle = UIModalPresentationStyle.FullScreen;
+   }
 
         public override void ViewDidLoad()
         {
@@ -173,70 +173,71 @@ TextAlignment = UITextAlignment.Center,
 
         private async Task StartStreamingAsync()
         {
-       // First, tell the PC to start streaming
-     try
+     // First, tell the PC to start streaming
+ try
             {
-          var baseHost = _host;
-          var apiPort = _port == 5002 ? 5000 : _port; // Assume API is on 5000 if stream is 5002
+  var baseHost = _host;
+        // API is on 19500, stream WebSocket is on 19501
+         var apiPort = 19500;
 
-                using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+     using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
       var request = new HttpRequestMessage(HttpMethod.Post, $"http://{baseHost}:{apiPort}/api/stream/start");
-    
-        if (!string.IsNullOrEmpty(_authToken))
-           request.Headers.Add("Authorization", $"Bearer {_authToken}");
+
+     if (!string.IsNullOrEmpty(_authToken))
+          request.Headers.Add("Authorization", $"Bearer {_authToken}");
 
      request.Content = new StringContent(
-           "{\"quality\":50,\"fps\":30,\"width\":1280,\"height\":720}",
-         System.Text.Encoding.UTF8,
-  "application/json");
+        "{\"quality\":50,\"fps\":30,\"width\":1280,\"height\":720}",
+  System.Text.Encoding.UTF8,
+    "application/json");
 
-        var response = await client.SendAsync(request);
-    Console.WriteLine($"Start stream response: {response.StatusCode}");
-}
-       catch (Exception ex)
-          {
+     var response = await client.SendAsync(request);
+  Console.WriteLine($"Start stream response: {response.StatusCode}");
+       }
+            catch (Exception ex)
+            {
       Console.WriteLine($"Failed to start stream on PC: {ex.Message}");
-            }
+    }
 
-            // Connect to the WebSocket stream
-       var connected = await StreamingClient.Instance.ConnectAsync(_host, _port);
-            
-         if (!connected)
+   // Connect to the WebSocket stream
+     var connected = await StreamingClient.Instance.ConnectAsync(_host, _port);
+
+     if (!connected)
    {
         InvokeOnMainThread(() =>
-             {
-              _statusLabel.Text = "Failed to connect";
-         _loadingIndicator.StopAnimating();
+         {
+_statusLabel.Text = "Failed to connect";
+        _loadingIndicator.StopAnimating();
        });
-            }
+          }
         }
 
         private async Task StopStreamingAsync()
         {
-            // Unsubscribe from events
-            StreamingClient.Instance.OnFrameReceived -= OnFrameReceived;
-       StreamingClient.Instance.OnConnected -= OnStreamConnected;
-      StreamingClient.Instance.OnDisconnected -= OnStreamDisconnected;
-   StreamingClient.Instance.OnError -= OnStreamError;
+  // Unsubscribe from events
+       StreamingClient.Instance.OnFrameReceived -= OnFrameReceived;
+      StreamingClient.Instance.OnConnected -= OnStreamConnected;
+  StreamingClient.Instance.OnDisconnected -= OnStreamDisconnected;
+    StreamingClient.Instance.OnError -= OnStreamError;
 
-          await StreamingClient.Instance.DisconnectAsync();
+       await StreamingClient.Instance.DisconnectAsync();
 
-            // Tell PC to stop streaming
-            try
-            {
-    var baseHost = _host;
-         var apiPort = _port == 5002 ? 5000 : _port;
+// Tell PC to stop streaming
+      try
+ {
+         var baseHost = _host;
+              var apiPort = 19500;
 
-      using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-   var request = new HttpRequestMessage(HttpMethod.Post, $"http://{baseHost}:{apiPort}/api/stream/stop");
-       
+       using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+    var request = new HttpRequestMessage(HttpMethod.Post, $"http://{baseHost}:{apiPort}/api/stream/stop");
+
 if (!string.IsNullOrEmpty(_authToken))
-           request.Headers.Add("Authorization", $"Bearer {_authToken}");
+ request.Headers.Add("Authorization", $"Bearer {_authToken}");
 
-          await client.SendAsync(request);
-   }
-        catch { }
-        }
+        await client.SendAsync(request);
+  }
+          catch { }
+      }
 
         private void OnFrameReceived(byte[] frameData)
         {
@@ -400,13 +401,13 @@ _dpad.OnDirectionChanged += dir =>
             AddSubview(_rightTrigger);
 
       // Start/Back
-            _startButton = new GamepadButtonView("?", btnColor) { Frame = new CGRect(0, 0, 50, 30) };
+            _startButton = new GamepadButtonView(">", btnColor) { Frame = new CGRect(0, 0, 50, 30) };
   _startButton.OnPressed += p => { SetButton(GamepadButtons.Start, p); };
   AddSubview(_startButton);
 
-            _backButton = new GamepadButtonView("?", btnColor) { Frame = new CGRect(0, 0, 50, 30) };
-            _backButton.OnPressed += p => { SetButton(GamepadButtons.Back, p); };
-         AddSubview(_backButton);
+         _backButton = new GamepadButtonView("<", btnColor) { Frame = new CGRect(0, 0, 50, 30) };
+ _backButton.OnPressed += p => { SetButton(GamepadButtons.Back, p); };
+   AddSubview(_backButton);
         }
 
         public override void LayoutSubviews()

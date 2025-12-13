@@ -27,7 +27,7 @@ namespace gaming_hub.Models
 
 // Remote PC Settings
   public string? RemotePCHost { get; set; }
-        public int RemotePCPort { get; set; } = 5000;
+        public int RemotePCPort { get; set; } = 19500;
         public string? RemotePCAuthToken { get; set; }
         public string? RemotePCMacAddress { get; set; }
         public bool RemotePCEnabled { get; set; }

@@ -273,23 +273,23 @@ contentY = _descriptionLabel.Frame.Bottom + padding;
   UpdateWishlistButton();
    UpdateRatingStars();
 
-  _playtimeLabel.Text = _game.PlaytimeMinutes > 0 ? $"?? {_game.PlaytimeFormatted} played" : "";
-            _playtimeLabel.Hidden = _game.PlaytimeMinutes == 0;
+      _playtimeLabel.Text = _game.PlaytimeMinutes > 0 ? $"{_game.PlaytimeFormatted} played" : "";
+ _playtimeLabel.Hidden = _game.PlaytimeMinutes == 0;
 
- _releaseDateLabel.Text = _game.ReleaseDate.HasValue ? $"?? {_game.ReleaseDate.Value:MMMM d, yyyy}" : "";
-            _releaseDateLabel.Hidden = !_game.ReleaseDate.HasValue;
+        _releaseDateLabel.Text = _game.ReleaseDate.HasValue ? $"{_game.ReleaseDate.Value:MMMM d, yyyy}" : "";
+          _releaseDateLabel.Hidden = !_game.ReleaseDate.HasValue;
 
-        _genresLabel.Text = !string.IsNullOrEmpty(_game.Genres) ? $"??? {_game.Genres}" : "";
-        _genresLabel.Hidden = string.IsNullOrEmpty(_game.Genres);
+            _genresLabel.Text = !string.IsNullOrEmpty(_game.Genres) ? _game.Genres : "";
+            _genresLabel.Hidden = string.IsNullOrEmpty(_game.Genres);
 
-_descriptionLabel.Text = !string.IsNullOrEmpty(_game.Description) ? _game.Description : "No description available.";
-        _descriptionLabel.TextColor = string.IsNullOrEmpty(_game.Description) ? UIColor.TertiaryLabel : UIColor.Label;
+            _descriptionLabel.Text = !string.IsNullOrEmpty(_game.Description) ? _game.Description : "No description available.";
+   _descriptionLabel.TextColor = string.IsNullOrEmpty(_game.Description) ? UIColor.TertiaryLabel : UIColor.Label;
 
-            if (!string.IsNullOrEmpty(_game.Developers))
+    if (!string.IsNullOrEmpty(_game.Developers))
      {
-       _developersLabel.Text = $"????? {_game.Developers}";
-              if (!string.IsNullOrEmpty(_game.Publishers))
-            _developersLabel.Text += $"\n?? {_game.Publishers}";
+       _developersLabel.Text = $"Dev: {_game.Developers}";
+    if (!string.IsNullOrEmpty(_game.Publishers))
+      _developersLabel.Text += $"\nPub: {_game.Publishers}";
  }
             _developersLabel.Hidden = string.IsNullOrEmpty(_game.Developers);
 
@@ -299,21 +299,21 @@ _descriptionLabel.Text = !string.IsNullOrEmpty(_game.Description) ? _game.Descri
     _metacriticLabel.Text = $"{score:0}";
     _metacriticLabel.BackgroundColor = score >= 75 ? UIColor.SystemGreen : score >= 50 ? UIColor.SystemYellow : UIColor.SystemRed;
 }
-            _metacriticLabel.Hidden = !_game.MetacriticScore.HasValue;
+    _metacriticLabel.Hidden = !_game.MetacriticScore.HasValue;
 
             // Load notes
     if (!string.IsNullOrEmpty(_game.Notes))
       {
-                _notesTextView.Text = _game.Notes;
+   _notesTextView.Text = _game.Notes;
       _notesTextView.TextColor = UIColor.Label;
   }
 
-          // Load screenshots
+   // Load screenshots
         _screenshots = _game.ScreenshotList;
        _screenshotsCollectionView.ReloadData();
 
      LoadImagesAsync();
-            ViewDidLayoutSubviews();
+    ViewDidLayoutSubviews();
      }
 
         private void UpdateRatingStars()
