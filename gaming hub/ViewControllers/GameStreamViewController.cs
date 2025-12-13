@@ -35,6 +35,8 @@ namespace gaming_hub.ViewControllers
         private bool _controlsVisible = true;
         private bool _gyroEnabled = false;
         private bool _physicalControllerPriority = true;
+        private bool _audioEnabled = true;
+        private float _audioVolume = 1.0f;
         private DateTime _lastInteraction = DateTime.Now;
         private NSTimer? _hideTimer;
 
@@ -60,6 +62,7 @@ namespace gaming_hub.ViewControllers
         {
             base.ViewDidAppear(animated);
             _ = StartStreamingAsync();
+            _ = StartAudioStreamAsync();
         }
 
         public override void ViewWillDisappear(bool animated)
@@ -68,6 +71,7 @@ namespace gaming_hub.ViewControllers
             _hideTimer?.Invalidate();
             CleanupNewFeatures();
             _ = StopStreamingAsync();
+            _ = AudioStreamClient.Instance.DisconnectAsync();
         }
 
         public override UIInterfaceOrientationMask GetSupportedInterfaceOrientations()
@@ -400,6 +404,10 @@ namespace gaming_hub.ViewControllers
             var modeText = _inputMode == StreamInputMode.Touch ? "Switch to Controller" : "Switch to Touch";
             alert.AddAction(UIAlertAction.Create(modeText, UIAlertActionStyle.Default, _ => ToggleInputMode()));
 
+            // Audio toggle
+            var audioText = _audioEnabled ? "?? Audio: On" : "?? Audio: Off";
+            alert.AddAction(UIAlertAction.Create(audioText, UIAlertActionStyle.Default, _ => ToggleAudio()));
+
             if (GyroscopeAimingService.Instance.IsAvailable)
             {
                 var gyroText = _gyroEnabled ? "Disable Gyro Aiming" : "Enable Gyro Aiming";
@@ -447,6 +455,22 @@ namespace gaming_hub.ViewControllers
                 alert.PopoverPresentationController.SourceRect = _menuButton.Bounds;
             }
             PresentViewController(alert, true, null);
+        }
+
+        private void ToggleAudio()
+        {
+            _audioEnabled = !_audioEnabled;
+
+            if (_audioEnabled)
+            {
+                _ = StartAudioStreamAsync();
+                ShowToast("Audio enabled");
+            }
+            else
+            {
+                _ = AudioStreamClient.Instance.DisconnectAsync();
+                ShowToast("Audio disabled");
+            }
         }
 
         private void ShowQuickActionsMenu()
@@ -525,28 +549,53 @@ namespace gaming_hub.ViewControllers
         private async Task StartStreamingAsync()
         {
             try
-            {
-                var apiPort = 19500;
-                using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                var request = new HttpRequestMessage(HttpMethod.Post, $"http://{_host}:{apiPort}/api/stream/start");
-                if (!string.IsNullOrEmpty(_authToken))
-                    request.Headers.Add("Authorization", $"Bearer {_authToken}");
-                request.Content = new StringContent("{\"quality\":50,\"fps\":60,\"width\":1280,\"height\":720}",
-                 System.Text.Encoding.UTF8, "application/json");
-                await client.SendAsync(request);
-            }
+ {
+     var apiPort = 19500;
+    using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+      var request = new HttpRequestMessage(HttpMethod.Post, $"http://{_host}:{apiPort}/api/stream/start");
+       if (!string.IsNullOrEmpty(_authToken))
+   request.Headers.Add("Authorization", $"Bearer {_authToken}");
+           request.Content = new StringContent("{\"quality\":50,\"fps\":60,\"width\":1280,\"height\":720}",
+  System.Text.Encoding.UTF8, "application/json");
+    await client.SendAsync(request);
+  }
             catch (Exception ex) { Console.WriteLine($"Failed to start stream: {ex.Message}"); }
 
-            var connected = await StreamingClient.Instance.ConnectAsync(_host, _port);
+ var connected = await StreamingClient.Instance.ConnectAsync(_host, _port);
             if (!connected)
-            {
-                InvokeOnMainThread(() =>
-     {
-     _statusLabel.Text = "Failed to connect";
-    _loadingIndicator.StopAnimating();
-     });
-      }
+  {
+          InvokeOnMainThread(() =>
+                {
+      _statusLabel.Text = "Failed to connect";
+_loadingIndicator.StopAnimating();
+       });
         }
+        }
+
+        private async Task StartAudioStreamAsync()
+        {
+       if (!_audioEnabled) return;
+
+        try
+            {
+          // Audio stream is on port + 1 (e.g., 5002 video -> 5003 audio)
+         var audioPort = _port + 1;
+        var connected = await AudioStreamClient.Instance.ConnectAsync(_host, audioPort);
+ if (connected)
+     {
+AudioStreamClient.Instance.SetVolume(_audioVolume);
+          Console.WriteLine("Audio stream connected");
+      }
+           else
+        {
+       Console.WriteLine("Audio stream not available");
+      }
+   }
+      catch (Exception ex)
+            {
+         Console.WriteLine($"Failed to connect audio stream: {ex.Message}");
+            }
+ }
 
         private async Task StopStreamingAsync()
         {
@@ -1063,8 +1112,8 @@ namespace gaming_hub.ViewControllers
             AddSubview(_rightTrigger);
 
             // Menu buttons
-            _startButton = CreateMenuButton("?", GamepadButtons.Start);
-            _backButton = CreateMenuButton("?", GamepadButtons.Back);
+         _startButton = CreateMenuButton("?", GamepadButtons.Start);   // Menu/Start symbol
+         _backButton = CreateMenuButton("?", GamepadButtons.Back);     // View/Back symbol
             _guideButton = CreateGuideButton();
 
             AddSubview(_startButton);
@@ -1110,27 +1159,27 @@ namespace gaming_hub.ViewControllers
 
         private string GetPlayStationLabel(GamepadButtons button) => button switch
         {
-            GamepadButtons.A => "?",
-            GamepadButtons.B => "?",
-            GamepadButtons.X => "?",
-            GamepadButtons.Y => "?",
-            _ => ""
+         GamepadButtons.A => "?",  // Cross
+       GamepadButtons.B => "?",  // Circle
+ GamepadButtons.X => "?",  // Square
+         GamepadButtons.Y => "?",  // Triangle
+    _ => ""
         };
 
         private UIButton CreateMenuButton(string label, GamepadButtons button)
         {
-            var size = _size == ControllerSize.Minimal ? 32 : (_size == ControllerSize.Large ? 44 : 38);
-            var btn = new UIButton(UIButtonType.Custom)
+  var size = _size == ControllerSize.Minimal ? 32 : (_size == ControllerSize.Large ? 44 : 38);
+   var btn = new UIButton(UIButtonType.Custom)
             {
-                TranslatesAutoresizingMaskIntoConstraints = false,
-                Frame = new CGRect(0, 0, size, size)
+         TranslatesAutoresizingMaskIntoConstraints = false,
+       Frame = new CGRect(0, 0, size, size)
             };
 
-            // Glass background
+       // Glass background
             btn.BackgroundColor = UIColor.FromWhiteAlpha(0.15f, 0.6f);
-            btn.Layer.CornerRadius = size / 2;
+   btn.Layer.CornerRadius = size / 2;
             btn.Layer.BorderColor = UIColor.FromWhiteAlpha(0.3f, 0.4f).CGColor;
-            btn.Layer.BorderWidth = 1;
+  btn.Layer.BorderWidth = 1;
 
             btn.SetTitle(label, UIControlState.Normal);
             btn.SetTitleColor(UIColor.FromWhiteAlpha(0.9f, 1f), UIControlState.Normal);
