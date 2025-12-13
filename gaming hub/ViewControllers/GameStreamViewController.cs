@@ -763,207 +763,249 @@ AudioStreamClient.Instance.SetVolume(_audioVolume);
     public enum TouchInputType { Move, Tap, DoubleTap, LongPress }
 
     /// <summary>
-    /// Touch input view for mouse control mode - Fixed version with proper tracking
+    /// Touch input view for mouse control mode - Completely rewritten for reliable tracking
     /// </summary>
     public class TouchInputView : UIView
     {
-        public event Action<float, float>? OnMouseMove;
-        public event Action<bool, bool, bool>? OnMouseClick;
+   public event Action<float, float>? OnMouseMove;
+   public event Action<bool, bool, bool>? OnMouseClick;
         public event Action<CGPoint>? OnCursorMoved;
 
-        private CGPoint _cursorPosition;
-        private CGPoint _lastTouchPosition;
+        // Cursor state
+      private CGPoint _virtualCursorPos;
+        private CGPoint _previousTouchPos;
+        private bool _isMoving;
+
+        // Settings
+        private readonly float _sensitivity = 1.5f;
+ private readonly float _acceleration = 1.2f;
+
+        // Click handling
+        private DateTime _lastTapTime = DateTime.MinValue;
         private bool _isDragging;
-        private bool _isLeftDown;
-        private int _streamWidth;
-        private int _streamHeight;
+        private NSTimer? _longPressTimer;
 
-        // Sensitivity settings
-        private float _moveSensitivity = 2.0f;
-        private float _scrollSensitivity = 1.0f;
-
-        // Multi-touch tracking
-        private int _activeTouchCount;
-        private CGPoint _scrollStartPosition;
-        private bool _isScrolling;
+        // Stream dimensions for coordinate mapping
+        private readonly int _streamWidth;
+        private readonly int _streamHeight;
 
         public TouchInputView(int streamWidth = 1920, int streamHeight = 1080)
         {
-            _streamWidth = streamWidth > 0 ? streamWidth : 1920;
+       _streamWidth = streamWidth > 0 ? streamWidth : 1920;
             _streamHeight = streamHeight > 0 ? streamHeight : 1080;
 
-            MultipleTouchEnabled = true;
-            UserInteractionEnabled = true;
-
-            // Single tap for left click
-            var tap = new UITapGestureRecognizer(OnTap) { NumberOfTapsRequired = 1 };
-            AddGestureRecognizer(tap);
-
-            // Double tap for double click
-            var doubleTap = new UITapGestureRecognizer(OnDoubleTap) { NumberOfTapsRequired = 2 };
-            AddGestureRecognizer(doubleTap);
-            tap.RequireGestureRecognizerToFail(doubleTap);
-
-            // Two finger tap for right click
-            var twoFingerTap = new UITapGestureRecognizer(OnRightClick) { NumberOfTouchesRequired = 2 };
-            AddGestureRecognizer(twoFingerTap);
-
-            // Long press for drag
-            var longPress = new UILongPressGestureRecognizer(OnLongPress) { MinimumPressDuration = 0.4 };
-            AddGestureRecognizer(longPress);
+     MultipleTouchEnabled = true;
+    UserInteractionEnabled = true;
+  BackgroundColor = UIColor.Clear;
         }
 
-        public override void LayoutSubviews()
-        {
-            base.LayoutSubviews();
-            if (_cursorPosition == CGPoint.Empty)
-            {
-                _cursorPosition = new CGPoint(Bounds.Width / 2, Bounds.Height / 2);
-                OnCursorMoved?.Invoke(_cursorPosition);
+  public override void LayoutSubviews()
+      {
+      base.LayoutSubviews();
+          
+       // Initialize cursor at center if not set
+            if (_virtualCursorPos == CGPoint.Empty)
+          {
+  _virtualCursorPos = new CGPoint(Bounds.Width / 2, Bounds.Height / 2);
+OnCursorMoved?.Invoke(_virtualCursorPos);
             }
         }
 
         public override void TouchesBegan(NSSet touches, UIEvent? evt)
         {
-            _activeTouchCount = (int)(evt?.AllTouches?.Count ?? 1);
+            base.TouchesBegan(touches, evt);
 
-            if (touches.AnyObject is UITouch touch)
-            {
-                _lastTouchPosition = touch.LocationInView(this);
-                _isDragging = true;
+     if (touches.AnyObject is UITouch touch)
+       {
+           _previousTouchPos = touch.LocationInView(this);
+       _isMoving = true;
 
-                // Two finger scroll mode
-                if (_activeTouchCount >= 2)
-                {
-                    _isScrolling = true;
-                    _scrollStartPosition = _lastTouchPosition;
-                }
-            }
+                var touchCount = evt?.AllTouches?.Count ?? 1;
+
+       // Two finger tap = right click
+       if (touchCount >= 2)
+     {
+    PerformRightClick();
+        return;
+     }
+
+       // Start long press timer for drag
+     _longPressTimer?.Invalidate();
+ _longPressTimer = NSTimer.CreateScheduledTimer(0.4, false, _ =>
+         {
+     if (_isMoving)
+    {
+               _isDragging = true;
+OnMouseClick?.Invoke(true, false, true); // Left down
+              PlayHaptic(UIImpactFeedbackStyle.Medium);
+  }
+       });
+        }
         }
 
         public override void TouchesMoved(NSSet touches, UIEvent? evt)
         {
-            if (touches.AnyObject is UITouch touch && _isDragging)
+         base.TouchesMoved(touches, evt);
+
+        if (!_isMoving) return;
+ if (touches.AnyObject is not UITouch touch) return;
+
+       var currentPos = touch.LocationInView(this);
+            
+    // Calculate delta with sensitivity and acceleration
+  var rawDeltaX = currentPos.X - _previousTouchPos.X;
+   var rawDeltaY = currentPos.Y - _previousTouchPos.Y;
+            
+    // Apply acceleration based on movement speed
+      var speed = Math.Sqrt((double)(rawDeltaX * rawDeltaX + rawDeltaY * rawDeltaY));
+     var accelFactor = 1.0 + (speed / 50.0) * (_acceleration - 1.0);
+      accelFactor = Math.Min(accelFactor, 2.5);
+
+   var deltaX = rawDeltaX * _sensitivity * (nfloat)accelFactor;
+var deltaY = rawDeltaY * _sensitivity * (nfloat)accelFactor;
+
+    // Update virtual cursor position with bounds clamping
+            var newX = Math.Clamp(_virtualCursorPos.X + deltaX, 0, Bounds.Width);
+            var newY = Math.Clamp(_virtualCursorPos.Y + deltaY, 0, Bounds.Height);
+       _virtualCursorPos = new CGPoint(newX, newY);
+
+            _previousTouchPos = currentPos;
+
+ // Notify cursor moved (for visual feedback)
+   OnCursorMoved?.Invoke(_virtualCursorPos);
+
+            // Send normalized mouse position to PC
+ var normalizedX = (float)(_virtualCursorPos.X / Bounds.Width);
+            var normalizedY = (float)(_virtualCursorPos.Y / Bounds.Height);
+            
+            normalizedX = Math.Clamp(normalizedX, 0f, 1f);
+  normalizedY = Math.Clamp(normalizedY, 0f, 1f);
+
+       OnMouseMove?.Invoke(normalizedX, normalizedY);
+
+   // Cancel long press if moved too much
+     if (speed > 10)
+          {
+      _longPressTimer?.Invalidate();
+         _longPressTimer = null;
+      }
+        }
+
+    public override void TouchesEnded(NSSet touches, UIEvent? evt)
+        {
+      base.TouchesEnded(touches, evt);
+
+            _longPressTimer?.Invalidate();
+          _longPressTimer = null;
+
+    // Release drag if active
+     if (_isDragging)
+       {
+    _isDragging = false;
+   OnMouseClick?.Invoke(true, false, false); // Left up
+ PlayHaptic(UIImpactFeedbackStyle.Light);
+           _isMoving = false;
+    return;
+        }
+
+            _isMoving = false;
+
+            // Check for tap (quick release without much movement)
+       if (touches.AnyObject is UITouch touch)
             {
-                var currentPos = touch.LocationInView(this);
-                var deltaX = (currentPos.X - _lastTouchPosition.X) * _moveSensitivity;
-                var deltaY = (currentPos.Y - _lastTouchPosition.Y) * _moveSensitivity;
+  var endPos = touch.LocationInView(this);
+    var moveDistance = Math.Sqrt(
+             Math.Pow((double)(endPos.X - _previousTouchPos.X), 2) +
+   Math.Pow((double)(endPos.Y - _previousTouchPos.Y), 2));
 
-                // Update cursor position with clamping
-                var newX = Math.Clamp(_cursorPosition.X + deltaX, 0, Bounds.Width);
-                var newY = Math.Clamp(_cursorPosition.Y + deltaY, 0, Bounds.Height);
-                _cursorPosition = new CGPoint(newX, newY);
+    // Single tap - left click
+          if (moveDistance < 15)
+    {
+   var now = DateTime.Now;
+   var timeSinceLastTap = (now - _lastTapTime).TotalMilliseconds;
 
-                _lastTouchPosition = currentPos;
-                OnCursorMoved?.Invoke(_cursorPosition);
-
-                // Calculate normalized position for the stream
-                var normalizedX = (float)(_cursorPosition.X / Bounds.Width);
-                var normalizedY = (float)(_cursorPosition.Y / Bounds.Height);
-
-                // Clamp to valid range
-                normalizedX = Math.Clamp(normalizedX, 0f, 1f);
-                normalizedY = Math.Clamp(normalizedY, 0f, 1f);
-
-                OnMouseMove?.Invoke(normalizedX, normalizedY);
+ if (timeSinceLastTap < 300)
+           {
+ // Double tap - double click
+      PerformDoubleClick();
+           _lastTapTime = DateTime.MinValue;
+               }
+else
+  {
+           // Single tap - left click
+    PerformLeftClick();
+            _lastTapTime = now;
+           }
+       }
             }
         }
 
-        public override void TouchesEnded(NSSet touches, UIEvent? evt)
+  public override void TouchesCancelled(NSSet touches, UIEvent? evt)
         {
-            _isDragging = false;
-            _isScrolling = false;
-            _activeTouchCount = 0;
+         base.TouchesCancelled(touches, evt);
 
-            if (_isLeftDown)
-            {
-                _isLeftDown = false;
-                OnMouseClick?.Invoke(true, false, false); // left up
-                PlayHaptic(false);
-            }
+     _longPressTimer?.Invalidate();
+            _longPressTimer = null;
+
+  if (_isDragging)
+{
+                _isDragging = false;
+                OnMouseClick?.Invoke(true, false, false); // Left up
+  }
+
+            _isMoving = false;
         }
 
-        public override void TouchesCancelled(NSSet touches, UIEvent? evt)
-        {
-            TouchesEnded(touches, evt);
-        }
-
-        private void OnTap(UITapGestureRecognizer g)
-        {
-            // Move cursor to tap location first
-            var tapLocation = g.LocationInView(this);
-
-            // Click at current cursor position
-            PlayHaptic(true);
-            OnMouseClick?.Invoke(true, false, true);  // left down
-
-            // Small delay then release
-            Task.Delay(50).ContinueWith(_ =>
+  private void PerformLeftClick()
+      {
+        PlayHaptic(UIImpactFeedbackStyle.Light);
+   OnMouseClick?.Invoke(true, false, true);  // Left down
+         
+            Task.Delay(30).ContinueWith(_ =>
             {
-                InvokeOnMainThread(() => OnMouseClick?.Invoke(true, false, false)); // left up
+     InvokeOnMainThread(() => OnMouseClick?.Invoke(true, false, false)); // Left up
             });
         }
 
-        private void OnDoubleTap(UITapGestureRecognizer g)
+        private void PerformDoubleClick()
         {
-            PlayHaptic(true);
-            // Double click sequence
+          PlayHaptic(UIImpactFeedbackStyle.Medium);
+    
+            // First click
             OnMouseClick?.Invoke(true, false, true);
             OnMouseClick?.Invoke(true, false, false);
-
+    
+          // Second click after short delay
             Task.Delay(50).ContinueWith(_ =>
-            {
+   {
                 InvokeOnMainThread(() =>
-                {
-                    OnMouseClick?.Invoke(true, false, true);
-                    OnMouseClick?.Invoke(true, false, false);
+     {
+         OnMouseClick?.Invoke(true, false, true);
+              OnMouseClick?.Invoke(true, false, false);
                 });
-            });
+   });
         }
 
-        private void OnRightClick(UITapGestureRecognizer g)
+        private void PerformRightClick()
         {
-            PlayHaptic(true);
-            OnMouseClick?.Invoke(false, true, true);
-
-            Task.Delay(50).ContinueWith(_ =>
-            {
-                InvokeOnMainThread(() => OnMouseClick?.Invoke(false, true, false));
-            });
+            PlayHaptic(UIImpactFeedbackStyle.Medium);
+ OnMouseClick?.Invoke(false, true, true);  // Right down
+          
+            Task.Delay(30).ContinueWith(_ =>
+   {
+                InvokeOnMainThread(() => OnMouseClick?.Invoke(false, true, false)); // Right up
+         });
         }
 
-        private void OnLongPress(UILongPressGestureRecognizer g)
-        {
-            switch (g.State)
-            {
-                case UIGestureRecognizerState.Began:
-                    _isLeftDown = true;
-                    PlayHaptic(true);
-                    OnMouseClick?.Invoke(true, false, true); // left down for drag
-                    break;
-                case UIGestureRecognizerState.Ended:
-                case UIGestureRecognizerState.Cancelled:
-                    if (_isLeftDown)
-                    {
-                        _isLeftDown = false;
-                        PlayHaptic(false);
-                        OnMouseClick?.Invoke(true, false, false); // left up
-                    }
-                    break;
-            }
-        }
-
-        private void PlayHaptic(bool heavy)
-        {
-            var generator = heavy
-            ? new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Medium)
-            : new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Light);
+        private void PlayHaptic(UIImpactFeedbackStyle style)
+     {
+var generator = new UIImpactFeedbackGenerator(style);
             generator.Prepare();
-            generator.ImpactOccurred();
-        }
+    generator.ImpactOccurred();
+    }
     }
 
-    /// <summary>
+  /// <summary>
     /// Modern virtual gamepad view with glass-morphic design
     /// </summary>
     public class VirtualGamepadView : UIView
@@ -971,873 +1013,393 @@ AudioStreamClient.Instance.SetVolume(_audioVolume);
         private readonly ControllerStyle _style;
         private readonly ControllerSize _size;
         public event Action<GamepadState>? OnStateChanged;
-        private GamepadState _state = new();
+     private GamepadState _state = new();
 
-        // Controls
         private ModernStickView? _leftStick;
-        private ModernStickView? _rightStick;
+    private ModernStickView? _rightStick;
         private ModernFaceButton? _buttonA, _buttonB, _buttonX, _buttonY;
         private ModernDPadView? _dpad;
-        private ModernShoulderButton? _leftBumper, _rightBumper;
+    private ModernShoulderButton? _leftBumper, _rightBumper;
         private ModernTriggerButton? _leftTrigger, _rightTrigger;
         private UIButton? _startButton, _backButton, _guideButton;
-
-        // Haptic engine
         private UIImpactFeedbackGenerator? _lightHaptic;
         private UIImpactFeedbackGenerator? _mediumHaptic;
 
         public VirtualGamepadView(ControllerStyle style, ControllerSize size)
-        {
-            _style = style;
-            _size = size;
-            MultipleTouchEnabled = true;
-
+  {
+    _style = style;
+    _size = size;
+      MultipleTouchEnabled = true;
             _lightHaptic = new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Light);
-            _mediumHaptic = new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Medium);
-            _lightHaptic.Prepare();
-            _mediumHaptic.Prepare();
+          _mediumHaptic = new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Medium);
+   _lightHaptic.Prepare();
+    _mediumHaptic.Prepare();
+      SetupControls();
+   }
 
-            SetupControls();
-        }
-
-        private (int stickSize, int buttonSize, int dpadSize, nfloat margin) GetSizes()
-        {
-            return _size switch
-            {
-                ControllerSize.Minimal => (80, 38, 100, 12),
-                ControllerSize.Large => (140, 58, 150, 30),
-                _ => (110, 48, 125, 20)
-            };
-        }
+        private (int stickSize, int buttonSize, int dpadSize, nfloat margin) GetSizes() => _size switch
+    {
+  ControllerSize.Minimal => (80, 38, 100, 12),
+       ControllerSize.Large => (140, 58, 150, 30),
+            _ => (110, 48, 125, 20)
+        };
 
         private void SetupControls()
         {
-            var (stickSize, buttonSize, dpadSize, margin) = GetSizes();
+    var (stickSize, buttonSize, dpadSize, margin) = GetSizes();
 
-            // Left analog stick
-            _leftStick = new ModernStickView(stickSize);
-            _leftStick.OnStickMoved += (x, y) =>
-            {
-                _state.LeftStickX = x;
-                _state.LeftStickY = y;
-                NotifyStateChanged();
-            };
-            _leftStick.OnStickPressed += pressed =>
-            {
-                if (pressed) _state.Buttons |= GamepadButtons.LeftStick;
-                else _state.Buttons &= ~GamepadButtons.LeftStick;
-                NotifyStateChanged();
-                _mediumHaptic?.ImpactOccurred();
-            };
+  _leftStick = new ModernStickView(stickSize);
+            _leftStick.OnStickMoved += (x, y) => { _state.LeftStickX = x; _state.LeftStickY = y; NotifyStateChanged(); };
+  _leftStick.OnStickPressed += p => { if (p) _state.Buttons |= GamepadButtons.LeftStick; else _state.Buttons &= ~GamepadButtons.LeftStick; NotifyStateChanged(); _mediumHaptic?.ImpactOccurred(); };
             AddSubview(_leftStick);
 
-            // Right analog stick
-            _rightStick = new ModernStickView(stickSize);
-            _rightStick.OnStickMoved += (x, y) =>
-            {
-                _state.RightStickX = x;
-                _state.RightStickY = y;
-                NotifyStateChanged();
-            };
-            _rightStick.OnStickPressed += pressed =>
-            {
-                if (pressed) _state.Buttons |= GamepadButtons.RightStick;
-                else _state.Buttons &= ~GamepadButtons.RightStick;
-                NotifyStateChanged();
-                _mediumHaptic?.ImpactOccurred();
-            };
-            AddSubview(_rightStick);
+      _rightStick = new ModernStickView(stickSize);
+   _rightStick.OnStickMoved += (x, y) => { _state.RightStickX = x; _state.RightStickY = y; NotifyStateChanged(); };
+            _rightStick.OnStickPressed += p => { if (p) _state.Buttons |= GamepadButtons.RightStick; else _state.Buttons &= ~GamepadButtons.RightStick; NotifyStateChanged(); _mediumHaptic?.ImpactOccurred(); };
+       AddSubview(_rightStick);
 
-            // Face buttons
-            var faceColors = GetFaceButtonColors();
-            _buttonA = CreateFaceButton("A", faceColors.a, buttonSize, GamepadButtons.A);
-            _buttonB = CreateFaceButton("B", faceColors.b, buttonSize, GamepadButtons.B);
-            _buttonX = CreateFaceButton("X", faceColors.x, buttonSize, GamepadButtons.X);
-            _buttonY = CreateFaceButton("Y", faceColors.y, buttonSize, GamepadButtons.Y);
+  var colors = GetFaceButtonColors();
+            _buttonA = CreateFaceButton("A", colors.a, buttonSize, GamepadButtons.A);
+            _buttonB = CreateFaceButton("B", colors.b, buttonSize, GamepadButtons.B);
+            _buttonX = CreateFaceButton("X", colors.x, buttonSize, GamepadButtons.X);
+ _buttonY = CreateFaceButton("Y", colors.y, buttonSize, GamepadButtons.Y);
+  AddSubview(_buttonA); AddSubview(_buttonB); AddSubview(_buttonX); AddSubview(_buttonY);
 
-            AddSubview(_buttonA);
-            AddSubview(_buttonB);
-            AddSubview(_buttonX);
-            AddSubview(_buttonY);
-
-            // D-Pad
             _dpad = new ModernDPadView(dpadSize);
             _dpad.OnDirectionChanged += (up, down, left, right) =>
-            {
-                _state.Buttons &= ~(GamepadButtons.DPadUp | GamepadButtons.DPadDown | GamepadButtons.DPadLeft | GamepadButtons.DPadRight);
-                if (up) _state.Buttons |= GamepadButtons.DPadUp;
-                if (down) _state.Buttons |= GamepadButtons.DPadDown;
-                if (left) _state.Buttons |= GamepadButtons.DPadLeft;
-                if (right) _state.Buttons |= GamepadButtons.DPadRight;
-                NotifyStateChanged();
-            };
-            AddSubview(_dpad);
+ {
+     _state.Buttons &= ~(GamepadButtons.DPadUp | GamepadButtons.DPadDown | GamepadButtons.DPadLeft | GamepadButtons.DPadRight);
+    if (up) _state.Buttons |= GamepadButtons.DPadUp;
+      if (down) _state.Buttons |= GamepadButtons.DPadDown;
+     if (left) _state.Buttons |= GamepadButtons.DPadLeft;
+           if (right) _state.Buttons |= GamepadButtons.DPadRight;
+     NotifyStateChanged();
+          };
+   AddSubview(_dpad);
 
-            // Bumpers
             _leftBumper = new ModernShoulderButton("LB", 70, 36);
-            _leftBumper.OnPressed += pressed =>
-            {
-                if (pressed) _state.Buttons |= GamepadButtons.LeftBumper;
-                else _state.Buttons &= ~GamepadButtons.LeftBumper;
-                NotifyStateChanged();
-                _lightHaptic?.ImpactOccurred();
-            };
-            AddSubview(_leftBumper);
+            _leftBumper.OnPressed += p => { if (p) _state.Buttons |= GamepadButtons.LeftBumper; else _state.Buttons &= ~GamepadButtons.LeftBumper; NotifyStateChanged(); _lightHaptic?.ImpactOccurred(); };
+        AddSubview(_leftBumper);
 
-            _rightBumper = new ModernShoulderButton("RB", 70, 36);
-            _rightBumper.OnPressed += pressed =>
-            {
-                if (pressed) _state.Buttons |= GamepadButtons.RightBumper;
-                else _state.Buttons &= ~GamepadButtons.RightBumper;
-                NotifyStateChanged();
-                _lightHaptic?.ImpactOccurred();
-            };
+    _rightBumper = new ModernShoulderButton("RB", 70, 36);
+            _rightBumper.OnPressed += p => { if (p) _state.Buttons |= GamepadButtons.RightBumper; else _state.Buttons &= ~GamepadButtons.RightBumper; NotifyStateChanged(); _lightHaptic?.ImpactOccurred(); };
             AddSubview(_rightBumper);
 
-            // Triggers
-            _leftTrigger = new ModernTriggerButton("LT", 60, 44);
-            _leftTrigger.OnValueChanged += value =>
-            {
-                _state.LeftTrigger = value;
-                NotifyStateChanged();
-            };
+     _leftTrigger = new ModernTriggerButton("LT", 60, 44);
+_leftTrigger.OnValueChanged += v => { _state.LeftTrigger = v; NotifyStateChanged(); };
             AddSubview(_leftTrigger);
 
-            _rightTrigger = new ModernTriggerButton("RT", 60, 44);
-            _rightTrigger.OnValueChanged += value =>
-            {
-                _state.RightTrigger = value;
-                NotifyStateChanged();
-            };
+_rightTrigger = new ModernTriggerButton("RT", 60, 44);
+            _rightTrigger.OnValueChanged += v => { _state.RightTrigger = v; NotifyStateChanged(); };
             AddSubview(_rightTrigger);
 
-            // Menu buttons
-         _startButton = CreateMenuButton("?", GamepadButtons.Start);   // Menu/Start symbol
-         _backButton = CreateMenuButton("?", GamepadButtons.Back);     // View/Back symbol
-            _guideButton = CreateGuideButton();
-
-            AddSubview(_startButton);
-            AddSubview(_backButton);
-            AddSubview(_guideButton);
+ _startButton = CreateMenuButton("?", GamepadButtons.Start);
+  _backButton = CreateMenuButton("?", GamepadButtons.Back);
+    _guideButton = CreateGuideButton();
+            AddSubview(_startButton); AddSubview(_backButton); AddSubview(_guideButton);
         }
 
-        private (UIColor a, UIColor b, UIColor x, UIColor y) GetFaceButtonColors()
-        {
-            if (_style == ControllerStyle.Xbox)
-            {
-                return (
-   UIColor.FromRGB(16, 124, 16),   // Green A
-           UIColor.FromRGB(180, 40, 40),   // Red B
-   UIColor.FromRGB(30, 100, 180),  // Blue X
-    UIColor.FromRGB(200, 160, 30)   // Yellow Y
-                );
-            }
-            else
-            {
-                return (
-              UIColor.FromRGB(70, 130, 200),   // Blue Cross
-            UIColor.FromRGB(200, 70, 90),    // Red Circle
-    UIColor.FromRGB(200, 80, 160),   // Pink Square
-        UIColor.FromRGB(80, 190, 160)    // Teal Triangle
-           );
-            }
-        }
+        private (UIColor a, UIColor b, UIColor x, UIColor y) GetFaceButtonColors() => _style == ControllerStyle.Xbox
+      ? (UIColor.FromRGB(16, 124, 16), UIColor.FromRGB(180, 40, 40), UIColor.FromRGB(30, 100, 180), UIColor.FromRGB(200, 160, 30))
+  : (UIColor.FromRGB(70, 130, 200), UIColor.FromRGB(200, 70, 90), UIColor.FromRGB(200, 80, 160), UIColor.FromRGB(80, 190, 160));
 
         private ModernFaceButton CreateFaceButton(string label, UIColor color, int size, GamepadButtons button)
-        {
-            var displayLabel = _style == ControllerStyle.PlayStation ? GetPlayStationLabel(button) : label;
-            var btn = new ModernFaceButton(displayLabel, color, size);
-            btn.OnPressed += pressed =>
-            {
-                if (pressed) _state.Buttons |= button;
-                else _state.Buttons &= ~button;
-                NotifyStateChanged();
-                _lightHaptic?.ImpactOccurred();
-            };
+  {
+          var displayLabel = _style == ControllerStyle.PlayStation ? GetPlayStationLabel(button) : label;
+         var btn = new ModernFaceButton(displayLabel, color, size);
+            btn.OnPressed += p => { if (p) _state.Buttons |= button; else _state.Buttons &= ~button; NotifyStateChanged(); _lightHaptic?.ImpactOccurred(); };
             return btn;
         }
 
-        private string GetPlayStationLabel(GamepadButtons button) => button switch
-        {
-         GamepadButtons.A => "?",  // Cross
-       GamepadButtons.B => "?",  // Circle
- GamepadButtons.X => "?",  // Square
-         GamepadButtons.Y => "?",  // Triangle
-    _ => ""
-        };
+        private string GetPlayStationLabel(GamepadButtons button) => button switch { GamepadButtons.A => "?", GamepadButtons.B => "?", GamepadButtons.X => "?", GamepadButtons.Y => "?", _ => "" };
 
         private UIButton CreateMenuButton(string label, GamepadButtons button)
-        {
+ {
   var size = _size == ControllerSize.Minimal ? 32 : (_size == ControllerSize.Large ? 44 : 38);
-   var btn = new UIButton(UIButtonType.Custom)
-            {
-         TranslatesAutoresizingMaskIntoConstraints = false,
-       Frame = new CGRect(0, 0, size, size)
-            };
-
-       // Glass background
-            btn.BackgroundColor = UIColor.FromWhiteAlpha(0.15f, 0.6f);
-   btn.Layer.CornerRadius = size / 2;
+  var btn = new UIButton(UIButtonType.Custom) { Frame = new CGRect(0, 0, size, size) };
+       btn.BackgroundColor = UIColor.FromWhiteAlpha(0.15f, 0.6f);
+      btn.Layer.CornerRadius = size / 2;
             btn.Layer.BorderColor = UIColor.FromWhiteAlpha(0.3f, 0.4f).CGColor;
-  btn.Layer.BorderWidth = 1;
-
-            btn.SetTitle(label, UIControlState.Normal);
-            btn.SetTitleColor(UIColor.FromWhiteAlpha(0.9f, 1f), UIControlState.Normal);
+    btn.Layer.BorderWidth = 1;
+     btn.SetTitle(label, UIControlState.Normal);
+    btn.SetTitleColor(UIColor.FromWhiteAlpha(0.9f, 1f), UIControlState.Normal);
             btn.TitleLabel!.Font = UIFont.SystemFontOfSize(size * 0.4f, UIFontWeight.Medium);
-
-            btn.TouchDown += (s, e) =>
-            {
-                _state.Buttons |= button;
-                NotifyStateChanged();
-                _lightHaptic?.ImpactOccurred();
-                UIView.Animate(0.1, () =>
-                {
-                    btn.BackgroundColor = UIColor.FromWhiteAlpha(0.35f, 0.8f);
-                    btn.Transform = CGAffineTransform.MakeScale(0.92f, 0.92f);
-                });
-            };
-
-            void Release()
-            {
-                _state.Buttons &= ~button;
-                NotifyStateChanged();
-                UIView.Animate(0.15, () =>
-                {
-                    btn.BackgroundColor = UIColor.FromWhiteAlpha(0.15f, 0.6f);
-                    btn.Transform = CGAffineTransform.MakeIdentity();
-                });
-            }
-
+          btn.TouchDown += (s, e) => { _state.Buttons |= button; NotifyStateChanged(); _lightHaptic?.ImpactOccurred(); btn.BackgroundColor = UIColor.FromWhiteAlpha(0.35f, 0.8f); btn.Transform = CGAffineTransform.MakeScale(0.92f, 0.92f); };
+            void Release() { _state.Buttons &= ~button; NotifyStateChanged(); btn.BackgroundColor = UIColor.FromWhiteAlpha(0.15f, 0.6f); btn.Transform = CGAffineTransform.MakeIdentity(); }
             btn.TouchUpInside += (s, e) => Release();
             btn.TouchUpOutside += (s, e) => Release();
-            btn.TouchCancel += (s, e) => Release();
-
+       btn.TouchCancel += (s, e) => Release();
             return btn;
         }
 
         private UIButton CreateGuideButton()
         {
-            var size = _size == ControllerSize.Minimal ? 36 : (_size == ControllerSize.Large ? 52 : 44);
-            var btn = new UIButton(UIButtonType.Custom)
-            {
-                TranslatesAutoresizingMaskIntoConstraints = false,
-                Frame = new CGRect(0, 0, size, size)
-            };
-
-            // Xbox/PS logo style button
-            var gradient = new CoreAnimation.CAGradientLayer
-            {
-                Frame = new CGRect(0, 0, size, size),
-                Colors = _style == ControllerStyle.Xbox
-  ? new[] { UIColor.FromRGB(16, 124, 16).CGColor, UIColor.FromRGB(10, 80, 10).CGColor }
-         : new[] { UIColor.FromRGB(0, 55, 145).CGColor, UIColor.FromRGB(0, 35, 100).CGColor },
-                CornerRadius = size / 2
-            };
-            btn.Layer.InsertSublayer(gradient, 0);
-            btn.Layer.CornerRadius = size / 2;
-            btn.ClipsToBounds = true;
-
-            var symbol = _style == ControllerStyle.Xbox ? "xbox.logo" : "playstation.logo";
-            var config = UIImageSymbolConfiguration.Create(size * 0.45f, UIImageSymbolWeight.Regular);
-            var image = UIImage.GetSystemImage(symbol, config) ?? UIImage.GetSystemImage("circle.fill", config);
-            btn.SetImage(image, UIControlState.Normal);
+        var size = _size == ControllerSize.Minimal ? 36 : (_size == ControllerSize.Large ? 52 : 44);
+            var btn = new UIButton(UIButtonType.Custom) { Frame = new CGRect(0, 0, size, size) };
+ btn.BackgroundColor = _style == ControllerStyle.Xbox ? UIColor.FromRGB(16, 124, 16) : UIColor.FromRGB(0, 55, 145);
+         btn.Layer.CornerRadius = size / 2;
+   btn.ClipsToBounds = true;
+        var config = UIImageSymbolConfiguration.Create(size * 0.45f, UIImageSymbolWeight.Regular);
+            btn.SetImage(UIImage.GetSystemImage("circle.fill", config), UIControlState.Normal);
             btn.TintColor = UIColor.White;
-
-            btn.TouchDown += (s, e) =>
-            {
-                _state.Buttons |= GamepadButtons.Guide;
-                NotifyStateChanged();
-                _mediumHaptic?.ImpactOccurred();
-                UIView.Animate(0.1, () => btn.Transform = CGAffineTransform.MakeScale(0.9f, 0.9f));
-            };
-
-            void Release()
-            {
-                _state.Buttons &= ~GamepadButtons.Guide;
-                NotifyStateChanged();
-                UIView.Animate(0.15, () => btn.Transform = CGAffineTransform.MakeIdentity());
-            }
-
+            btn.TouchDown += (s, e) => { _state.Buttons |= GamepadButtons.Guide; NotifyStateChanged(); _mediumHaptic?.ImpactOccurred(); btn.Transform = CGAffineTransform.MakeScale(0.9f, 0.9f); };
+        void Release() { _state.Buttons &= ~GamepadButtons.Guide; NotifyStateChanged(); btn.Transform = CGAffineTransform.MakeIdentity(); }
             btn.TouchUpInside += (s, e) => Release();
-            btn.TouchUpOutside += (s, e) => Release();
-            btn.TouchCancel += (s, e) => Release();
+     btn.TouchUpOutside += (s, e) => Release();
+btn.TouchCancel += (s, e) => Release();
+    return btn;
+     }
 
-            return btn;
-        }
+ public override void LayoutSubviews()
+     {
+ base.LayoutSubviews();
+     var safeArea = SafeAreaInsets;
+      var (stickSize, buttonSize, dpadSize, margin) = GetSizes();
+       var bottomMargin = safeArea.Bottom + 15;
 
-        public override void LayoutSubviews()
-        {
-            base.LayoutSubviews();
+   _leftStick?.SetFrame(new CGRect(safeArea.Left + margin, Bounds.Height - stickSize - bottomMargin, stickSize, stickSize));
+         var dpadX = safeArea.Left + margin + (stickSize - dpadSize) / 2;
+        var dpadY = Bounds.Height - stickSize - bottomMargin - dpadSize - 20;
+    _dpad?.SetFrame(new CGRect(dpadX, dpadY, dpadSize, dpadSize));
+            _rightStick?.SetFrame(new CGRect(Bounds.Width - stickSize - safeArea.Right - margin, Bounds.Height - stickSize - bottomMargin, stickSize, stickSize));
 
-            var safeArea = SafeAreaInsets;
-            var (stickSize, buttonSize, dpadSize, margin) = GetSizes();
-            var bottomMargin = safeArea.Bottom + 15;
-
-            // Left stick - bottom left
-            _leftStick?.SetFrame(new CGRect(
-     safeArea.Left + margin,
-  Bounds.Height - stickSize - bottomMargin,
-       stickSize,
-      stickSize));
-
-   // D-Pad - above left stick
-  var dpadX = safeArea.Left + margin + (stickSize - dpadSize) / 2;
-  var dpadY = Bounds.Height - stickSize - bottomMargin - dpadSize - 20;
-            _dpad?.SetFrame(new CGRect(dpadX, dpadY, dpadSize, dpadSize));
-
-          // Right stick - bottom right
-            _rightStick?.SetFrame(new CGRect(
-      Bounds.Width - stickSize - safeArea.Right - margin,
-Bounds.Height - stickSize - bottomMargin,
-       stickSize,
-   stickSize));
-
-            // Face buttons - diamond layout above right stick
- var faceCenterX = Bounds.Width - stickSize / 2 - safeArea.Right - margin;
-      var faceCenterY = Bounds.Height - stickSize - bottomMargin - buttonSize - 40;
-      var faceSpacing = buttonSize + 6;
-
-   _buttonA?.SetCenter(new CGPoint(faceCenterX, faceCenterY + faceSpacing / 2 + 5));
+            var faceCenterX = Bounds.Width - stickSize / 2 - safeArea.Right - margin;
+         var faceCenterY = Bounds.Height - stickSize - bottomMargin - buttonSize - 40;
+    var faceSpacing = buttonSize + 6;
+     _buttonA?.SetCenter(new CGPoint(faceCenterX, faceCenterY + faceSpacing / 2 + 5));
             _buttonB?.SetCenter(new CGPoint(faceCenterX + faceSpacing / 2 + 5, faceCenterY));
-_buttonX?.SetCenter(new CGPoint(faceCenterX - faceSpacing / 2 - 5, faceCenterY));
-          _buttonY?.SetCenter(new CGPoint(faceCenterX, faceCenterY - faceSpacing / 2 - 5));
+            _buttonX?.SetCenter(new CGPoint(faceCenterX - faceSpacing / 2 - 5, faceCenterY));
+            _buttonY?.SetCenter(new CGPoint(faceCenterX, faceCenterY - faceSpacing / 2 - 5));
 
-    // Triggers & Bumpers
-  var shoulderY = safeArea.Top + 50;
-            var triggerY = safeArea.Top + 100;
-
-   _leftBumper?.SetCenter(new CGPoint(safeArea.Left + 55, shoulderY));
+            var shoulderY = safeArea.Top + 50;
+  var triggerY = safeArea.Top + 100;
+      _leftBumper?.SetCenter(new CGPoint(safeArea.Left + 55, shoulderY));
             _rightBumper?.SetCenter(new CGPoint(Bounds.Width - safeArea.Right - 55, shoulderY));
-            _leftTrigger?.SetCenter(new CGPoint(safeArea.Left + 50, triggerY));
-        _rightTrigger?.SetCenter(new CGPoint(Bounds.Width - safeArea.Right - 50, triggerY));
+       _leftTrigger?.SetCenter(new CGPoint(safeArea.Left + 50, triggerY));
+   _rightTrigger?.SetCenter(new CGPoint(Bounds.Width - safeArea.Right - 50, triggerY));
 
-   // Menu buttons - center top
-         var menuY = safeArea.Top + 75;
-            var guideSize = _size == ControllerSize.Minimal ? 36 : (_size == ControllerSize.Large ? 52 : 44);
-
-            _guideButton!.Frame = new CGRect(0, 0, guideSize, guideSize);
+            var menuY = safeArea.Top + 75;
+       var guideSize = _size == ControllerSize.Minimal ? 36 : (_size == ControllerSize.Large ? 52 : 44);
+     _guideButton!.Frame = new CGRect(0, 0, guideSize, guideSize);
             _guideButton.Center = new CGPoint(Bounds.Width / 2, menuY);
-
-        var menuSize = _size == ControllerSize.Minimal ? 32 : (_size == ControllerSize.Large ? 44 : 38);
- _backButton!.Frame = new CGRect(0, 0, menuSize, menuSize);
-         _backButton.Center = new CGPoint(Bounds.Width / 2 - guideSize - 15, menuY);
-    _startButton!.Frame = new CGRect(0, 0, menuSize, menuSize);
-        _startButton.Center = new CGPoint(Bounds.Width / 2 + guideSize + 15, menuY);
-        }
-
-      private void NotifyStateChanged() => OnStateChanged?.Invoke(_state);
+     var menuSize = _size == ControllerSize.Minimal ? 32 : (_size == ControllerSize.Large ? 44 : 38);
+            _backButton!.Frame = new CGRect(0, 0, menuSize, menuSize);
+            _backButton.Center = new CGPoint(Bounds.Width / 2 - guideSize - 15, menuY);
+     _startButton!.Frame = new CGRect(0, 0, menuSize, menuSize);
+          _startButton.Center = new CGPoint(Bounds.Width / 2 + guideSize + 15, menuY);
     }
 
-    /// <summary>
-    /// Modern analog stick with glass design
-    /// </summary>
-    public class ModernStickView : UIView
+        private void NotifyStateChanged() => OnStateChanged?.Invoke(_state);
+    }
+
+ public class ModernStickView : UIView
     {
         public event Action<float, float>? OnStickMoved;
-        public event Action<bool>? OnStickPressed;
-
-        private UIView _trackView;
-        private UIView _thumbView;
-        private UIView _thumbInner;
-        private CGPoint _centerPoint;
-        private readonly nfloat _maxDistance;
-        private bool _isTracking;
-        private DateTime _touchStartTime;
+      public event Action<bool>? OnStickPressed;
+        private UIView _trackView, _thumbView;
+private CGPoint _centerPoint;
+    private readonly nfloat _maxDistance;
+     private bool _isTracking;
+  private DateTime _touchStartTime;
 
         public ModernStickView(int size)
-        {
-            _maxDistance = size / 2 - 22;
+     {
+ _maxDistance = size / 2 - 22;
             Frame = new CGRect(0, 0, size, size);
-            UserInteractionEnabled = true;
+  UserInteractionEnabled = true;
 
-            // Track (outer ring) with gradient border
-            _trackView = new UIView
-            {
-                Frame = new CGRect(0, 0, size, size),
-                BackgroundColor = UIColor.FromWhiteAlpha(0.08f, 0.5f)
-            };
+            _trackView = new UIView { Frame = new CGRect(0, 0, size, size), BackgroundColor = UIColor.FromWhiteAlpha(0.08f, 0.5f) };
             _trackView.Layer.CornerRadius = size / 2;
             _trackView.Layer.BorderColor = UIColor.FromWhiteAlpha(0.25f, 0.6f).CGColor;
             _trackView.Layer.BorderWidth = 2;
+       AddSubview(_trackView);
 
-            // Inner track indicator
-            var innerTrackSize = size * 0.65;
-            var innerTrack = new UIView
-            {
-                Frame = new CGRect((size - innerTrackSize) / 2, (size - innerTrackSize) / 2, innerTrackSize, innerTrackSize),
-                BackgroundColor = UIColor.Clear
-            };
-            innerTrack.Layer.CornerRadius = (nfloat)(innerTrackSize / 2);
-            innerTrack.Layer.BorderColor = UIColor.FromWhiteAlpha(0.15f, 0.4f).CGColor;
-            innerTrack.Layer.BorderWidth = 1;
-            _trackView.AddSubview(innerTrack);
-            AddSubview(_trackView);
-
-            // Thumb (movable part)
-            var thumbSize = size * 0.5;
-            _thumbView = new UIView
-            {
-                Frame = new CGRect(0, 0, thumbSize, thumbSize),
-                BackgroundColor = UIColor.FromWhiteAlpha(0.85f, 0.95f)
-            };
-            _thumbView.Layer.CornerRadius = (nfloat)(thumbSize / 2);
-            _thumbView.Layer.ShadowColor = UIColor.Black.CGColor;
-            _thumbView.Layer.ShadowOffset = new CGSize(0, 3);
-            _thumbView.Layer.ShadowRadius = 6;
+  var thumbSize = size * 0.5;
+        _thumbView = new UIView { Frame = new CGRect(0, 0, thumbSize, thumbSize), BackgroundColor = UIColor.FromWhiteAlpha(0.85f, 0.95f) };
+      _thumbView.Layer.CornerRadius = (nfloat)(thumbSize / 2);
+          _thumbView.Layer.ShadowColor = UIColor.Black.CGColor;
+    _thumbView.Layer.ShadowOffset = new CGSize(0, 3);
+          _thumbView.Layer.ShadowRadius = 6;
             _thumbView.Layer.ShadowOpacity = 0.4f;
+   AddSubview(_thumbView);
+   }
 
-            // Inner circle on thumb
-            var innerSize = thumbSize * 0.55;
-            _thumbInner = new UIView
-            {
-                Frame = new CGRect((thumbSize - innerSize) / 2, (thumbSize - innerSize) / 2, innerSize, innerSize),
-                BackgroundColor = UIColor.FromWhiteAlpha(0.5f, 0.6f)
-            };
-            _thumbInner.Layer.CornerRadius = (nfloat)(innerSize / 2);
-            _thumbView.AddSubview(_thumbInner);
-
-            AddSubview(_thumbView);
-        }
-
-        public void SetFrame(CGRect frame)
-        {
-            Frame = frame;
-            SetNeedsLayout();
-        }
-
-        public override void LayoutSubviews()
-        {
-            base.LayoutSubviews();
-            _centerPoint = new CGPoint(Bounds.Width / 2, Bounds.Height / 2);
-            if (!_isTracking)
-                _thumbView.Center = _centerPoint;
-        }
-
-        public override void TouchesBegan(NSSet touches, UIEvent? evt)
-        {
-            _isTracking = true;
-            _touchStartTime = DateTime.Now;
-            UpdateThumbPosition(touches);
-
-            UIView.Animate(0.1, () =>
-            {
-                _thumbView.Transform = CGAffineTransform.MakeScale(1.1f, 1.1f);
-                _trackView.Layer.BorderColor = UIColor.FromWhiteAlpha(0.4f, 0.8f).CGColor;
-            });
-        }
-
-        public override void TouchesMoved(NSSet touches, UIEvent? evt)
-        {
-            if (_isTracking)
-                UpdateThumbPosition(touches);
-        }
-
-        public override void TouchesEnded(NSSet touches, UIEvent? evt)
-        {
-            // Check for stick click (short tap without much movement)
-            var touchDuration = (DateTime.Now - _touchStartTime).TotalMilliseconds;
-            if (touchDuration < 200 && _thumbView.Center.DistanceTo(_centerPoint) < 15)
-            {
-                OnStickPressed?.Invoke(true);
-                Task.Delay(100).ContinueWith(_ => InvokeOnMainThread(() => OnStickPressed?.Invoke(false)));
-            }
-
-            _isTracking = false;
-            ResetThumb();
-        }
-
-        public override void TouchesCancelled(NSSet touches, UIEvent? evt)
-        {
-            _isTracking = false;
-            ResetThumb();
-        }
+public void SetFrame(CGRect frame) { Frame = frame; SetNeedsLayout(); }
+        public override void LayoutSubviews() { base.LayoutSubviews(); _centerPoint = new CGPoint(Bounds.Width / 2, Bounds.Height / 2); if (!_isTracking) _thumbView.Center = _centerPoint; }
+        public override void TouchesBegan(NSSet touches, UIEvent? evt) { _isTracking = true; _touchStartTime = DateTime.Now; UpdateThumbPosition(touches); UIView.Animate(0.1, () => { _thumbView.Transform = CGAffineTransform.MakeScale(1.1f, 1.1f); }); }
+     public override void TouchesMoved(NSSet touches, UIEvent? evt) { if (_isTracking) UpdateThumbPosition(touches); }
+        public override void TouchesEnded(NSSet touches, UIEvent? evt) { if ((DateTime.Now - _touchStartTime).TotalMilliseconds < 200 && _thumbView.Center.DistanceTo(_centerPoint) < 15) { OnStickPressed?.Invoke(true); Task.Delay(100).ContinueWith(_ => InvokeOnMainThread(() => OnStickPressed?.Invoke(false))); } _isTracking = false; ResetThumb(); }
+        public override void TouchesCancelled(NSSet touches, UIEvent? evt) { _isTracking = false; ResetThumb(); }
 
         private void UpdateThumbPosition(NSSet touches)
         {
-            if (touches.AnyObject is not UITouch touch) return;
-
-            var location = touch.LocationInView(this);
-            var deltaX = location.X - _centerPoint.X;
-            var deltaY = location.Y - _centerPoint.Y;
-            var distance = (nfloat)Math.Sqrt((double)(deltaX * deltaX + deltaY * deltaY));
-
-            if (distance > _maxDistance)
-            {
-                var scale = _maxDistance / distance;
-                deltaX *= scale;
-                deltaY *= scale;
-            }
-
+   if (touches.AnyObject is not UITouch touch) return;
+          var location = touch.LocationInView(this);
+       var deltaX = location.X - _centerPoint.X;
+    var deltaY = location.Y - _centerPoint.Y;
+    var distance = (nfloat)Math.Sqrt((double)(deltaX * deltaX + deltaY * deltaY));
+            if (distance > _maxDistance) { var scale = _maxDistance / distance; deltaX *= scale; deltaY *= scale; }
             _thumbView.Center = new CGPoint(_centerPoint.X + deltaX, _centerPoint.Y + deltaY);
-
-            var normalizedX = (float)(deltaX / _maxDistance);
-            var normalizedY = (float)(deltaY / _maxDistance);
-
-            // Apply deadzone
+     var normalizedX = (float)(deltaX / _maxDistance);
+ var normalizedY = (float)(deltaY / _maxDistance);
             if (Math.Abs(normalizedX) < 0.1f) normalizedX = 0;
-            if (Math.Abs(normalizedY) < 0.1f) normalizedY = 0;
+    if (Math.Abs(normalizedY) < 0.1f) normalizedY = 0;
+OnStickMoved?.Invoke(normalizedX, normalizedY);
+ }
 
-            OnStickMoved?.Invoke(normalizedX, normalizedY);
-        }
-
-        private void ResetThumb()
-        {
-            UIView.Animate(0.2, 0, UIViewAnimationOptions.CurveEaseOut, () =>
-            {
-                _thumbView.Center = _centerPoint;
-                _thumbView.Transform = CGAffineTransform.MakeIdentity();
-                _trackView.Layer.BorderColor = UIColor.FromWhiteAlpha(0.25f, 0.6f).CGColor;
-            }, null);
-            OnStickMoved?.Invoke(0, 0);
-        }
+        private void ResetThumb() { UIView.Animate(0.2, () => { _thumbView.Center = _centerPoint; _thumbView.Transform = CGAffineTransform.MakeIdentity(); }); OnStickMoved?.Invoke(0, 0); }
     }
 
-    /// <summary>
-    /// Modern face button with glow effect
-    /// </summary>
     public class ModernFaceButton : UIView
     {
-        public event Action<bool>? OnPressed;
-
-        private readonly UIColor _color;
-        private readonly UILabel _label;
+     public event Action<bool>? OnPressed;
+   private readonly UIColor _color;
         private readonly UIView _glowView;
 
         public ModernFaceButton(string text, UIColor color, int size)
         {
-            _color = color;
-            Frame = new CGRect(0, 0, size, size);
+    _color = color;
+     Frame = new CGRect(0, 0, size, size);
             UserInteractionEnabled = true;
 
-            // Glow layer (behind button)
-            _glowView = new UIView
-            {
-                Frame = new CGRect(-4, -4, size + 8, size + 8),
-                BackgroundColor = color.ColorWithAlpha(0.3f),
-                Alpha = 0
-            };
+    _glowView = new UIView { Frame = new CGRect(-4, -4, size + 8, size + 8), BackgroundColor = color.ColorWithAlpha(0.3f), Alpha = 0 };
             _glowView.Layer.CornerRadius = (size + 8) / 2;
             AddSubview(_glowView);
 
-            // Main button
             BackgroundColor = color.ColorWithAlpha(0.85f);
-            Layer.CornerRadius = size / 2;
-            Layer.BorderColor = UIColor.FromWhiteAlpha(0.4f, 0.5f).CGColor;
-            Layer.BorderWidth = 1.5f;
-            Layer.ShadowColor = color.CGColor;
-            Layer.ShadowOffset = new CGSize(0, 2);
-            Layer.ShadowRadius = 4;
-            Layer.ShadowOpacity = 0.4f;
+Layer.CornerRadius = size / 2;
+ Layer.BorderColor = UIColor.FromWhiteAlpha(0.4f, 0.5f).CGColor;
+     Layer.BorderWidth = 1.5f;
 
-            // Label
-            _label = new UILabel
-            {
-                Text = text,
-                TextColor = UIColor.White,
-                Font = UIFont.BoldSystemFontOfSize(size * 0.4f),
-                TextAlignment = UITextAlignment.Center,
-                Frame = new CGRect(0, 0, size, size)
-            };
-            _label.Layer.ShadowColor = UIColor.Black.CGColor;
-            _label.Layer.ShadowOffset = new CGSize(0, 1);
-            _label.Layer.ShadowRadius = 2;
-            _label.Layer.ShadowOpacity = 0.5f;
-            AddSubview(_label);
+    var label = new UILabel { Text = text, TextColor = UIColor.White, Font = UIFont.BoldSystemFontOfSize(size * 0.4f), TextAlignment = UITextAlignment.Center, Frame = new CGRect(0, 0, size, size) };
+      AddSubview(label);
         }
 
         public void SetCenter(CGPoint center) => Center = center;
-
-        public override void TouchesBegan(NSSet touches, UIEvent? evt)
-        {
-            OnPressed?.Invoke(true);
-            UIView.Animate(0.08, () =>
-            {
-                Transform = CGAffineTransform.MakeScale(0.88f, 0.88f);
-                _glowView.Alpha = 1;
-                BackgroundColor = _color;
-                Layer.ShadowOpacity = 0.7f;
-            });
-        }
-
+        public override void TouchesBegan(NSSet touches, UIEvent? evt) { OnPressed?.Invoke(true); UIView.Animate(0.08, () => { Transform = CGAffineTransform.MakeScale(0.88f, 0.88f); _glowView.Alpha = 1; BackgroundColor = _color; }); }
         public override void TouchesEnded(NSSet touches, UIEvent? evt) => Release();
         public override void TouchesCancelled(NSSet touches, UIEvent? evt) => Release();
-
-        private void Release()
-        {
-            OnPressed?.Invoke(false);
-            UIView.Animate(0.15, () =>
-            {
-                Transform = CGAffineTransform.MakeIdentity();
-                _glowView.Alpha = 0;
-                BackgroundColor = _color.ColorWithAlpha(0.85f);
-                Layer.ShadowOpacity = 0.4f;
-            });
-        }
+        private void Release() { OnPressed?.Invoke(false); UIView.Animate(0.15, () => { Transform = CGAffineTransform.MakeIdentity(); _glowView.Alpha = 0; BackgroundColor = _color.ColorWithAlpha(0.85f); }); }
     }
 
-    /// <summary>
-    /// Modern D-Pad with unified touch handling
-    /// </summary>
     public class ModernDPadView : UIView
     {
-        public event Action<bool, bool, bool, bool>? OnDirectionChanged;
-
-        private readonly UIView _centerButton;
-        private readonly UIView[] _arrows = new UIView[4];
+ public event Action<bool, bool, bool, bool>? OnDirectionChanged;
+    private readonly UIView[] _arrows = new UIView[4];
         private bool _up, _down, _left, _right;
         private readonly int _size;
 
-        public ModernDPadView(int size)
+     public ModernDPadView(int size)
         {
             _size = size;
             Frame = new CGRect(0, 0, size, size);
             UserInteractionEnabled = true;
-            MultipleTouchEnabled = true;
+   MultipleTouchEnabled = true;
 
-            // Background circle
-            BackgroundColor = UIColor.FromWhiteAlpha(0.1f, 0.5f);
-            Layer.CornerRadius = size / 2;
-            Layer.BorderColor = UIColor.FromWhiteAlpha(0.2f, 0.5f).CGColor;
-            Layer.BorderWidth = 1.5f;
+     BackgroundColor = UIColor.FromWhiteAlpha(0.1f, 0.5f);
+   Layer.CornerRadius = size / 2;
+ Layer.BorderColor = UIColor.FromWhiteAlpha(0.2f, 0.5f).CGColor;
+          Layer.BorderWidth = 1.5f;
 
-            // Center button
-            var centerSize = size * 0.25;
-            _centerButton = new UIView
-            {
-                Frame = new CGRect((size - centerSize) / 2, (size - centerSize) / 2, centerSize, centerSize),
-                BackgroundColor = UIColor.FromWhiteAlpha(0.25f, 0.7f)
-            };
-            _centerButton.Layer.CornerRadius = (nfloat)(centerSize / 2);
-            AddSubview(_centerButton);
-
-            // Arrow indicators
-            var arrowSize = size * 0.18;
             var arrowOffset = size * 0.28;
-
-            _arrows[0] = CreateArrow("chevron.up", new CGPoint(size / 2, arrowOffset));
-            _arrows[1] = CreateArrow("chevron.down", new CGPoint(size / 2, size - arrowOffset));
+        _arrows[0] = CreateArrow("chevron.up", new CGPoint(size / 2, arrowOffset));
+  _arrows[1] = CreateArrow("chevron.down", new CGPoint(size / 2, size - arrowOffset));
             _arrows[2] = CreateArrow("chevron.left", new CGPoint(arrowOffset, size / 2));
-            _arrows[3] = CreateArrow("chevron.right", new CGPoint(size - arrowOffset, size / 2));
+          _arrows[3] = CreateArrow("chevron.right", new CGPoint(size - arrowOffset, size / 2));
         }
 
         private UIView CreateArrow(string icon, CGPoint center)
         {
-            var size = _size * 0.2;
-            var view = new UIImageView
-            {
-                Frame = new CGRect(0, 0, size, size),
-                ContentMode = UIViewContentMode.Center,
-                TintColor = UIColor.FromWhiteAlpha(0.7f, 1f)
-            };
+        var size = _size * 0.2;
+            var view = new UIImageView { Frame = new CGRect(0, 0, size, size), ContentMode = UIViewContentMode.Center, TintColor = UIColor.FromWhiteAlpha(0.7f, 1f) };
             var config = UIImageSymbolConfiguration.Create((nfloat)(size * 0.7), UIImageSymbolWeight.Bold);
             view.Image = UIImage.GetSystemImage(icon, config);
             view.Center = center;
-            AddSubview(view);
-            return view;
-        }
+   AddSubview(view);
+   return view;
+  }
 
-        public void SetFrame(CGRect frame)
-        {
-            Frame = frame;
-            SetNeedsLayout();
-        }
-
+        public void SetFrame(CGRect frame) { Frame = frame; SetNeedsLayout(); }
         public override void TouchesBegan(NSSet touches, UIEvent? evt) => UpdateDirection(touches);
         public override void TouchesMoved(NSSet touches, UIEvent? evt) => UpdateDirection(touches);
-
-        public override void TouchesEnded(NSSet touches, UIEvent? evt)
-        {
-            _up = _down = _left = _right = false;
-            UpdateVisuals();
-            OnDirectionChanged?.Invoke(false, false, false, false);
-        }
-
+      public override void TouchesEnded(NSSet touches, UIEvent? evt) { _up = _down = _left = _right = false; UpdateVisuals(); OnDirectionChanged?.Invoke(false, false, false, false); }
         public override void TouchesCancelled(NSSet touches, UIEvent? evt) => TouchesEnded(touches, evt);
 
         private void UpdateDirection(NSSet touches)
         {
-            if (touches.AnyObject is not UITouch touch) return;
-
-            var location = touch.LocationInView(this);
-            var centerX = Bounds.Width / 2;
-            var centerY = Bounds.Height / 2;
-            var dx = location.X - centerX;
-            var dy = location.Y - centerY;
-
-            var deadzone = Bounds.Width * 0.15;
-
-            _up = dy < -deadzone;
-            _down = dy > deadzone;
-            _left = dx < -deadzone;
-            _right = dx > deadzone;
-
-            UpdateVisuals();
+   if (touches.AnyObject is not UITouch touch) return;
+    var location = touch.LocationInView(this);
+     var deadzone = Bounds.Width * 0.15;
+        _up = (location.Y - Bounds.Height / 2) < -deadzone;
+        _down = (location.Y - Bounds.Height / 2) > deadzone;
+          _left = (location.X - Bounds.Width / 2) < -deadzone;
+      _right = (location.X - Bounds.Width / 2) > deadzone;
+         UpdateVisuals();
             OnDirectionChanged?.Invoke(_up, _down, _left, _right);
-
-            // Haptic feedback
-            if (_up || _down || _left || _right)
-            {
-                var generator = new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Light);
-                generator.ImpactOccurred();
-            }
+          if (_up || _down || _left || _right) new UIImpactFeedbackGenerator(UIImpactFeedbackStyle.Light).ImpactOccurred();
         }
 
-        private void UpdateVisuals()
-        {
-            UIView.Animate(0.08, () =>
-            {
-                _arrows[0].TintColor = _up ? UIColor.White : UIColor.FromWhiteAlpha(0.7f, 1f);
-                _arrows[0].Transform = _up ? CGAffineTransform.MakeScale(1.2f, 1.2f) : CGAffineTransform.MakeIdentity();
-
-                _arrows[1].TintColor = _down ? UIColor.White : UIColor.FromWhiteAlpha(0.7f, 1f);
-                _arrows[1].Transform = _down ? CGAffineTransform.MakeScale(1.2f, 1.2f) : CGAffineTransform.MakeIdentity();
-
-                _arrows[2].TintColor = _left ? UIColor.White : UIColor.FromWhiteAlpha(0.7f, 1f);
-                _arrows[2].Transform = _left ? CGAffineTransform.MakeScale(1.2f, 1.2f) : CGAffineTransform.MakeIdentity();
-
-                _arrows[3].TintColor = _right ? UIColor.White : UIColor.FromWhiteAlpha(0.7f, 1f);
-                _arrows[3].Transform = _right ? CGAffineTransform.MakeScale(1.2f, 1.2f) : CGAffineTransform.MakeIdentity();
-            });
-        }
+    private void UpdateVisuals() { UIView.Animate(0.08, () => { for (int i = 0; i < 4; i++) { var active = i == 0 ? _up : i == 1 ? _down : i == 2 ? _left : _right; _arrows[i].TintColor = active ? UIColor.White : UIColor.FromWhiteAlpha(0.7f, 1f); _arrows[i].Transform = active ? CGAffineTransform.MakeScale(1.2f, 1.2f) : CGAffineTransform.MakeIdentity(); } }); }
     }
 
-    /// <summary>
-    /// Modern shoulder button (bumper)
-    /// </summary>
     public class ModernShoulderButton : UIView
     {
         public event Action<bool>? OnPressed;
-
-        public ModernShoulderButton(string label, int width, int height)
+public ModernShoulderButton(string label, int width, int height)
         {
-            Frame = new CGRect(0, 0, width, height);
-            UserInteractionEnabled = true;
-
-            BackgroundColor = UIColor.FromWhiteAlpha(0.15f, 0.7f);
-            Layer.CornerRadius = height / 2;
-            Layer.BorderColor = UIColor.FromWhiteAlpha(0.3f, 0.5f).CGColor;
+        Frame = new CGRect(0, 0, width, height);
+          UserInteractionEnabled = true;
+      BackgroundColor = UIColor.FromWhiteAlpha(0.15f, 0.7f);
+Layer.CornerRadius = height / 2;
+       Layer.BorderColor = UIColor.FromWhiteAlpha(0.3f, 0.5f).CGColor;
             Layer.BorderWidth = 1;
-
-            var lbl = new UILabel
-            {
-                Text = label,
-                TextColor = UIColor.White,
-                Font = UIFont.BoldSystemFontOfSize(13),
-                TextAlignment = UITextAlignment.Center,
-                Frame = new CGRect(0, 0, width, height)
-            };
+       var lbl = new UILabel { Text = label, TextColor = UIColor.White, Font = UIFont.BoldSystemFontOfSize(13), TextAlignment = UITextAlignment.Center, Frame = new CGRect(0, 0, width, height) };
             AddSubview(lbl);
         }
-
         public void SetCenter(CGPoint center) => Center = center;
-
-        public override void TouchesBegan(NSSet touches, UIEvent? evt)
-        {
-            OnPressed?.Invoke(true);
-            UIView.Animate(0.08, () =>
-            {
-                BackgroundColor = UIColor.FromWhiteAlpha(0.4f, 0.85f);
-                Transform = CGAffineTransform.MakeScale(0.95f, 0.95f);
-            });
-        }
-
-        public override void TouchesEnded(NSSet touches, UIEvent? evt) => Release();
+        public override void TouchesBegan(NSSet touches, UIEvent? evt) { OnPressed?.Invoke(true); UIView.Animate(0.08, () => { BackgroundColor = UIColor.FromWhiteAlpha(0.4f, 0.85f); Transform = CGAffineTransform.MakeScale(0.95f, 0.95f); }); }
+  public override void TouchesEnded(NSSet touches, UIEvent? evt) => Release();
         public override void TouchesCancelled(NSSet touches, UIEvent? evt) => Release();
-
-        private void Release()
-        {
-            OnPressed?.Invoke(false);
-            UIView.Animate(0.12, () =>
-            {
-                BackgroundColor = UIColor.FromWhiteAlpha(0.15f, 0.7f);
-                Transform = CGAffineTransform.MakeIdentity();
-            });
-        }
+        private void Release() { OnPressed?.Invoke(false); UIView.Animate(0.12, () => { BackgroundColor = UIColor.FromWhiteAlpha(0.15f, 0.7f); Transform = CGAffineTransform.MakeIdentity(); }); }
     }
 
-    /// <summary>
-    /// Modern trigger button with analog support
-    /// </summary>
     public class ModernTriggerButton : UIView
     {
         public event Action<float>? OnValueChanged;
-
-        private readonly UIView _fillView;
+private readonly UIView _fillView;
         private readonly int _height;
-        private bool _isPressed;
 
         public ModernTriggerButton(string label, int width, int height)
         {
-            _height = height;
-            Frame = new CGRect(0, 0, width, height);
-            UserInteractionEnabled = true;
+  _height = height;
+       Frame = new CGRect(0, 0, width, height);
+  UserInteractionEnabled = true;
+   BackgroundColor = UIColor.FromWhiteAlpha(0.12f, 0.6f);
+         Layer.CornerRadius = 10;
+   Layer.BorderColor = UIColor.FromWhiteAlpha(0.25f, 0.5f).CGColor;
+          Layer.BorderWidth = 1;
+     ClipsToBounds = true;
 
-            BackgroundColor = UIColor.FromWhiteAlpha(0.12f, 0.6f);
-            Layer.CornerRadius = 10;
-            Layer.BorderColor = UIColor.FromWhiteAlpha(0.25f, 0.5f).CGColor;
-            Layer.BorderWidth = 1;
-            ClipsToBounds = true;
-
-            // Fill indicator
-            _fillView = new UIView
-            {
-                Frame = new CGRect(0, height, width, 0),
-                BackgroundColor = UIColor.FromRGB(80, 160, 255).ColorWithAlpha(0.6f)
-            };
-            AddSubview(_fillView);
-
-            var lbl = new UILabel
-            {
-                Text = label,
-                TextColor = UIColor.White,
-                Font = UIFont.BoldSystemFontOfSize(12),
-                TextAlignment = UITextAlignment.Center,
-                Frame = new CGRect(0, 0, width, height)
-            };
-            AddSubview(lbl);
-        }
-
-        public void SetCenter(CGPoint center) => Center = center;
-
-        public override void TouchesBegan(NSSet touches, UIEvent? evt)
-        {
-            _isPressed = true;
-            SetValue(1.0f);
-        }
-
-        public override void TouchesEnded(NSSet touches, UIEvent? evt)
-        {
-            _isPressed = false;
-            SetValue(0f);
-        }
-
-        public override void TouchesCancelled(NSSet touches, UIEvent? evt) => TouchesEnded(touches, evt);
-
-        private void SetValue(float value)
-        {
-            OnValueChanged?.Invoke(value);
-
-            UIView.Animate(0.1, () =>
-            {
-                var fillHeight = _height * value;
-                _fillView.Frame = new CGRect(0, _height - fillHeight, Frame.Width, fillHeight);
-
-                if (value > 0.5f)
-                    Layer.BorderColor = UIColor.FromRGB(80, 160, 255).ColorWithAlpha(0.7f).CGColor;
-                else
-                    Layer.BorderColor = UIColor.FromWhiteAlpha(0.25f, 0.5f).CGColor;
-            });
-        }
+  _fillView = new UIView { Frame = new CGRect(0, height, width, 0), BackgroundColor = UIColor.FromRGB(80, 160, 255).ColorWithAlpha(0.6f) };
+        AddSubview(_fillView);
+       var lbl = new UILabel { Text = label, TextColor = UIColor.White, Font = UIFont.BoldSystemFontOfSize(12), TextAlignment = UITextAlignment.Center, Frame = new CGRect(0, 0, width, height) };
+      AddSubview(lbl);
     }
 
-    // Extension for CGPoint distance calculation
+     public void SetCenter(CGPoint center) => Center = center;
+        public override void TouchesBegan(NSSet touches, UIEvent? evt) => SetValue(1.0f);
+        public override void TouchesEnded(NSSet touches, UIEvent? evt) => SetValue(0f);
+        public override void TouchesCancelled(NSSet touches, UIEvent? evt) => SetValue(0f);
+        private void SetValue(float value) { OnValueChanged?.Invoke(value); UIView.Animate(0.1, () => { var fillHeight = _height * value; _fillView.Frame = new CGRect(0, _height - fillHeight, Frame.Width, fillHeight); }); }
+    }
+
     public static class CGPointExtensions
     {
         public static nfloat DistanceTo(this CGPoint point, CGPoint other)
         {
             var dx = point.X - other.X;
             var dy = point.Y - other.Y;
-            return (nfloat)Math.Sqrt((double)(dx * dx + dy * dy));
-        }
+  return (nfloat)Math.Sqrt((double)(dx * dx + dy * dy));
+      }
     }
 }
