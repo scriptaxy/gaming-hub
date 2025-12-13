@@ -162,9 +162,9 @@ FileName = _ffmpegPath,
         }
         catch (Exception ex)
         {
-   Log($"Failed to start encoder: {ex.Message}")
+ Log($"Failed to start encoder: {ex.Message}");
             return false;
-  }
+        }
     }
 
     /// <summary>

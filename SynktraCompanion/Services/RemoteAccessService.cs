@@ -517,44 +517,33 @@ code = ConnectionCode,
     /// </summary>
     private string GetConnectionInstructions()
     {
-        if (!IsEnabled)
-    {
-    return "Enable remote access to connect from outside your network.";
+   if (!IsEnabled)
+{
+  return "Enable remote access to connect from outside your network.";
         }
 
         return DetectedNatType switch
         {
-            NatType.FullCone or NatType.RestrictedCone or NatType.PortRestricted =>
-   $"""
-    ? Direct connection possible!
-   
-        On your iPhone:
-      1. Open Synktra app
-         2. Tap "Add PC" ? "Remote Connection"
-        3. Enter code: {ConnectionCode}
-      
-    Or scan the QR code shown in the app.
-   """,
+     NatType.FullCone or NatType.RestrictedCone or NatType.PortRestricted =>
+ $"Direct connection possible!\n\n" +
+     $"On your iPhone:\n" +
+    $"1. Open Synktra app\n" +
+  $"2. Tap \"Add PC\" ? \"Remote Connection\"\n" +
+        $"3. Enter code: {ConnectionCode}\n\n" +
+        $"Or scan the QR code shown in the app.",
 
-NatType.Symmetric =>
-         $"""
-         ?? Symmetric NAT detected - direct connection may not work.
-     
-             Options:
-         1. Set up port forwarding on your router (ports 19500-19503)
-             2. Use the connection code on the same network first
-      3. Consider a VPN solution for reliable remote access
-       
-    Connection code: {ConnectionCode}
-       """,
+     NatType.Symmetric =>
+       $"Symmetric NAT detected - direct connection may not work.\n\n" +
+         $"Options:\n" +
+    $"1. Set up port forwarding on your router (ports 19500-19503)\n" +
+  $"2. Use the connection code on the same network first\n" +
+     $"3. Consider a VPN solution for reliable remote access\n\n" +
+    $"Connection code: {ConnectionCode}",
 
-   _ =>
-        $"""
-  Connection code: {ConnectionCode}
-        
-         Enter this code in the Synktra iOS app to connect.
-         Works best when both devices can reach each other.
-    """
+      _ =>
+ $"Connection code: {ConnectionCode}\n\n" +
+                $"Enter this code in the Synktra iOS app to connect.\n" +
+        $"Works best when both devices can reach each other."
         };
     }
 
