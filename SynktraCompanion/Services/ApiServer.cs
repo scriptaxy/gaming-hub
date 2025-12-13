@@ -468,6 +468,16 @@ public class ApiServer
                 result = GetMonitors();
             else if (path == "/api/stream/monitor" && method == "POST")
                 result = await SelectMonitorAsync(request);
+            // Tailscale integration endpoints
+            else if (path == "/api/network/tailscale" && method == "GET")
+                result = GetTailscaleStatus();
+            else if (path == "/api/network/info" && method == "GET")
+                result = GetNetworkInfo();
+            // Encoder info endpoint
+            else if (path == "/api/stream/encoder" && method == "GET")
+                result = GetEncoderInfo();
+            else if (path == "/api/stream/codec" && method == "POST")
+                result = await SetCodecAsync(request);
 
             if (result != null)
                 await SendResponse(response, 200, result);
@@ -905,6 +915,131 @@ public class ApiServer
             {
                 _streamService.SelectMonitor(data.monitorIndex);
                 return new { success = true, selectedMonitor = data.monitorIndex };
+            }
+            return new { success = false, error = "Invalid request" };
+        }
+        catch (Exception ex)
+        {
+            return new { success = false, error = ex.Message };
+        }
+    }
+
+    #endregion
+
+    #region Network & Tailscale Endpoints
+
+    /// <summary>
+    /// Get Tailscale connection status for remote access
+    /// </summary>
+    private object GetTailscaleStatus()
+    {
+        var info = TailscaleIntegration.Instance.GetConnectionInfo();
+        return new
+        {
+            installed = info.IsInstalled,
+            connected = info.IsConnected,
+            tailscaleIP = info.TailscaleIP,
+            localIP = info.LocalIP,
+            hostname = info.Hostname,
+            status = info.Status,
+            downloadUrl = info.DownloadUrl,
+            setupInstructions = info.SetupInstructions,
+            message = info.IsConnected
+                ? $"Remote access available via {info.TailscaleIP}"
+                : info.IsInstalled
+                    ? "Tailscale installed but not connected"
+                    : "Install Tailscale for remote access from anywhere"
+        };
+    }
+
+    /// <summary>
+    /// Get all network connection info
+    /// </summary>
+    private object GetNetworkInfo()
+    {
+        var tailscale = TailscaleIntegration.Instance.GetConnectionInfo();
+        var macAddress = GetPrimaryMacAddress();
+
+        return new
+        {
+            localIP = tailscale.LocalIP,
+            tailscaleIP = tailscale.TailscaleIP,
+            tailscaleConnected = tailscale.IsConnected,
+            bestIP = TailscaleIntegration.Instance.GetBestStreamingIP(),
+            macAddress = macAddress,
+            hostname = Environment.MachineName,
+            ports = new
+            {
+                api = _port,
+                streamWs = StreamWsPort,
+                streamUdp = StreamUdpPort,
+                audio = AudioStreamPort,
+                discovery = DiscoveryPort
+            },
+            remoteAccessReady = tailscale.IsConnected,
+            wakeOnLanReady = !string.IsNullOrEmpty(macAddress)
+        };
+    }
+
+    #endregion
+
+    #region Encoder Endpoints
+
+    /// <summary>
+    /// Get current encoder information
+    /// </summary>
+    private object GetEncoderInfo()
+    {
+        var encoder = HardwareEncoderService.Instance;
+        var stats = encoder.GetStats();
+
+        return new
+        {
+            encoder = stats.Encoder,
+            codec = stats.Codec,
+            resolution = stats.Resolution,
+            fps = stats.Fps,
+            bitrate = stats.Bitrate,
+            isEncoding = stats.IsEncoding,
+            supportsH265 = stats.SupportsH265,
+            queuedFrames = stats.QueuedFrames,
+            recommendation = stats.SupportsH265
+                ? "H.265/HEVC recommended for 50% better quality at same bitrate"
+                : "H.264 mode (H.265 not supported by GPU)"
+        };
+    }
+
+    /// <summary>
+    /// Set video codec (H.264 or H.265)
+    /// </summary>
+    private async Task<object> SetCodecAsync(HttpListenerRequest request)
+    {
+        try
+        {
+            using var reader = new StreamReader(request.InputStream);
+            var body = await reader.ReadToEndAsync();
+            var data = JsonConvert.DeserializeAnonymousType(body, new { codec = "h264" });
+
+            if (data != null)
+            {
+                var codec = data.codec.ToLower() switch
+                {
+                    "h265" or "hevc" => VideoCodec.H265,
+                    "h264" or "avc" => VideoCodec.H264,
+                    _ => VideoCodec.Auto
+                };
+
+                var success = HardwareEncoderService.Instance.SetCodec(codec);
+                var stats = HardwareEncoderService.Instance.GetStats();
+
+                return new
+                {
+                    success,
+                    codec = stats.Codec,
+                    message = success
+                        ? $"Codec changed to {stats.Codec}"
+                        : "Failed to change codec (H.265 may not be supported)"
+                };
             }
             return new { success = false, error = "Invalid request" };
         }
