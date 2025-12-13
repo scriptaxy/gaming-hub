@@ -16,6 +16,9 @@ namespace gaming_hub.Services
         public const string DiscoveryMessage = "SYNKTRA_DISCOVER";
 
         public static RemotePCService Instance => _instance ??= new RemotePCService();
+    
+    // Expose HttpClient for other services
+    public HttpClient HttpClient => _httpClient;
 
   public event Action<string>? OnDiscoveryLog;
 
@@ -122,14 +125,16 @@ if (!response.StartsWith("{")) continue;
      }
 
    var json = JObject.Parse(response);
-            var pc = new DiscoveredPC
+             var pc = new DiscoveredPC
          {
-  Hostname = json["Hostname"]?.ToString() ?? "Unknown PC",
+         Hostname = json["Hostname"]?.ToString() ?? "Unknown PC",
          IpAddress = ip,
-              Port = json["Port"]?.Value<int>() ?? ApiPort,
-     RequiresAuth = json["RequiresAuth"]?.Value<bool>() ?? false,
-    Version = json["Version"]?.ToString() ?? "1.0.0"
-   };
+             Port = json["Port"]?.Value<int>() ?? ApiPort,
+  RequiresAuth = json["RequiresAuth"]?.Value<bool>() ?? false,
+        Version = json["Version"]?.ToString() ?? "1.0.0",
+        SupportsVirtualController = json["SupportsVirtualController"]?.Value<bool>() ?? false,
+    VirtualControllerActive = json["VirtualControllerActive"]?.Value<bool>() ?? false
+    };
 
           lock (discovered)
                 {
@@ -211,7 +216,9 @@ var allIps = Enumerable.Range(1, 254)
           IpAddress = ip,
     Port = json["Port"]?.Value<int>() ?? port,
     RequiresAuth = json["RequiresAuth"]?.Value<bool>() ?? false,
-        Version = json["Version"]?.ToString() ?? "1.0.0"
+        Version = json["Version"]?.ToString() ?? "1.0.0",
+       SupportsVirtualController = json["SupportsVirtualController"]?.Value<bool>() ?? false,
+   VirtualControllerActive = json["VirtualControllerActive"]?.Value<bool>() ?? false
         };
 
           lock (seenIps)
@@ -257,7 +264,9 @@ var allIps = Enumerable.Range(1, 254)
            IpAddress = host,
        Port = json["Port"]?.Value<int>() ?? port,
            RequiresAuth = json["RequiresAuth"]?.Value<bool>() ?? false,
-         Version = json["Version"]?.ToString() ?? "1.0.0"
+         Version = json["Version"]?.ToString() ?? "1.0.0",
+        SupportsVirtualController = json["SupportsVirtualController"]?.Value<bool>() ?? false,
+    VirtualControllerActive = json["VirtualControllerActive"]?.Value<bool>() ?? false
      };
 
      Log($"Connected! Found {pc.Hostname}");
@@ -323,15 +332,18 @@ var allIps = Enumerable.Range(1, 254)
 
                     return new RemotePCStatus
         {
-             IsOnline = true,
+       IsOnline = true,
      Hostname = json["Hostname"]?.ToString() ?? json["hostname"]?.ToString() ?? host,
  CpuUsage = json["CpuUsage"]?.Value<double>() ?? json["cpu_usage"]?.Value<double>() ?? 0,
-       MemoryUsage = json["MemoryUsage"]?.Value<double>() ?? json["memory_usage"]?.Value<double>() ?? 0,
+  MemoryUsage = json["MemoryUsage"]?.Value<double>() ?? json["memory_usage"]?.Value<double>() ?? 0,
     GpuUsage = json["GpuUsage"]?.Value<double?>() ?? json["gpu_usage"]?.Value<double?>(),
          GpuTemperature = json["GpuTemp"]?.Value<double?>() ?? json["gpu_temp"]?.Value<double?>(),
-              CurrentGame = json["CurrentGame"]?.ToString() ?? json["current_game"]?.ToString(),
-        IsStreaming = json["IsStreaming"]?.Value<bool>() ?? json["is_streaming"]?.Value<bool>() ?? false,
-              Uptime = json["Uptime"]?.ToString() ?? json["uptime"]?.ToString()
+ CurrentGame = json["CurrentGame"]?.ToString() ?? json["current_game"]?.ToString(),
+      IsStreaming = json["IsStreaming"]?.Value<bool>() ?? json["is_streaming"]?.Value<bool>() ?? false,
+              Uptime = json["Uptime"]?.ToString() ?? json["uptime"]?.ToString(),
+      VirtualControllerConnected = json["VirtualControllerConnected"]?.Value<bool>() ?? false,
+    VirtualControllerType = json["VirtualControllerType"]?.ToString() ?? string.Empty,
+      InputMode = json["InputMode"]?.ToString() ?? string.Empty
        };
  }
           }
@@ -543,33 +555,38 @@ try
     public class DiscoveredPC
     {
         public string Hostname { get; set; } = string.Empty;
-      public string IpAddress { get; set; } = string.Empty;
+        public string IpAddress { get; set; } = string.Empty;
         public int Port { get; set; } = 19500;
       public bool RequiresAuth { get; set; }
         public string Version { get; set; } = string.Empty;
+        public bool SupportsVirtualController { get; set; }
+   public bool VirtualControllerActive { get; set; }
     }
 
     public class RemotePCStatus
     {
       public bool IsOnline { get; set; }
         public string Hostname { get; set; } = string.Empty;
-        public string ComputerName => Hostname;
-        public double CpuUsage { get; set; }
+  public string ComputerName => Hostname;
+    public double CpuUsage { get; set; }
         public double MemoryUsage { get; set; }
         public double? GpuUsage { get; set; }
         public double? GpuTemperature { get; set; }
         public string? CurrentGame { get; set; }
         public bool IsStreaming { get; set; }
-        public string? Uptime { get; set; }
+   public string? Uptime { get; set; }
+   public bool VirtualControllerConnected { get; set; }
+      public string VirtualControllerType { get; set; } = string.Empty;
+        public string InputMode { get; set; } = string.Empty;
     }
 
     public class RemoteGame
     {
-    public string Id { get; set; } = string.Empty;
-public string Name { get; set; } = string.Empty;
+        public string Id { get; set; } = string.Empty;
+  public string Name { get; set; } = string.Empty;
         public string? Platform { get; set; }
-        public string? InstallPath { get; set; }
+ public string? InstallPath { get; set; }
         public string? IconPath { get; set; }
-        public bool IsRunning { get; set; }
+     public bool IsRunning { get; set; }
     }
 }

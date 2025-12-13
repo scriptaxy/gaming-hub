@@ -1,0 +1,4 @@
+# Dependencies directory for installer
+# ViGEmBus_Setup.exe will be downloaded here during build
+
+# This file ensures the directory exists in git

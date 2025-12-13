@@ -5,6 +5,10 @@ publish/
 publish-single/
 publish-final/
 
+# Installer outputs
+Installer/Output/
+Installer/Dependencies/*.exe
+
 # IDE
 .vs/
 .idea/
@@ -24,7 +28,7 @@ Thumbs.db
 # Packages
 packages/
 
-# Executables
+# Executables (except in Installer/Output)
 *.exe
 !*.vshost.exe
 

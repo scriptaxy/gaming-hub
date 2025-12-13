@@ -50,6 +50,9 @@ public class AppSettings
     public int StreamHeight { get; set; } = 720;
     public bool LowLatencyMode { get; set; } = true;
     
+    // Virtual Controller Settings
+    public bool EnableVirtualController { get; set; } = true;
+    
     // UI Settings
     public string Theme { get; set; } = "Dark";
     public string AccentColor { get; set; } = "Purple";
@@ -79,6 +82,11 @@ public class ApiStatusResponse
     public int StreamFps { get; set; }
     public double StreamBitrateKbps { get; set; }
     public string? Uptime { get; set; }
+    
+    // Virtual controller status
+    public bool VirtualControllerConnected { get; set; }
+    public string VirtualControllerType { get; set; } = string.Empty;
+    public string InputMode { get; set; } = string.Empty;
 }
 
 public class ConnectionInfo
