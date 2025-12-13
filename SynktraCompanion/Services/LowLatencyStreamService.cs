@@ -41,7 +41,11 @@ public class LowLatencyStreamService
     private bool _useDeltaFrames = false; // Send only changed regions
     private int _keyFrameInterval = 30; // Full frame every N frames
     private int _framesSinceKeyFrame = 0;
- private byte[]? _lastFrameData;
+    private byte[]? _lastFrameData;
+    
+    // Hardware encoder
+    private bool _useHardwareEncoder = false;
+    private HardwareEncoderService? _hwEncoder;
     
     // GPU resource allocation - percentage of GPU to reserve for streaming (0.2 = 20%, 0.3 = 30%)
 private float _gpuResourceAllocation = 0.25f;
