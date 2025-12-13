@@ -41,28 +41,22 @@ public class LowLatencyStreamService
     private bool _useDeltaFrames = false; // Send only changed regions
     private int _keyFrameInterval = 30; // Full frame every N frames
     private int _framesSinceKeyFrame = 0;
-    private byte[]? _lastFrameData;
+ private byte[]? _lastFrameData;
     
     // GPU resource allocation - percentage of GPU to reserve for streaming (0.2 = 20%, 0.3 = 30%)
 private float _gpuResourceAllocation = 0.25f;
     private bool _adaptiveQuality = true;
-    private int _minQuality = 25;
-    private int _maxQuality = 60;
+    private bool _adaptiveBitrate = true;
+    private int _minQuality = 20;
+    private int _maxQuality = 70;
     private int _adaptiveTargetFps = 45; // Minimum acceptable FPS before quality adjustment
     
-    // Input queue for batched processing
-    private readonly ConcurrentQueue<InputCommand> _inputQueue = new();
-    private Thread? _inputProcessorThread;
-
-    public bool IsStreaming => _isStreaming;
-    public int ClientCount
-    {
-        get
-        {
-     lock (_clientsLock)
-       return _udpClients.Count + _wsClients.Count;
-        }
-    }
+ // Network monitoring for adaptive bitrate
+    private double _lastRtt = 0;
+    private double _avgRtt = 0;
+    private int _droppedFrames = 0;
+    private DateTime _lastBitrateAdjustment = DateTime.MinValue;
+    private readonly Queue<double> _rttSamples = new();
 
     // Performance stats
     private double _lastCaptureMs;
@@ -614,236 +608,109 @@ bytesThisSecond = 0;
     }
 
     /// <summary>
- /// Automatically adjust quality based on achieved FPS
+ /// Automatically adjust quality based on achieved FPS and network conditions
     /// </summary>
     private void AdjustQualityBasedOnPerformance()
     {
         // Don't adjust too frequently
-        if ((DateTime.Now - _lastQualityAdjustment).TotalSeconds < 3)
-  return;
-            
-        _recentFps.Enqueue(_fps);
+        if ((DateTime.Now - _lastQualityAdjustment).TotalSeconds < 2)
+        return;
+
+_recentFps.Enqueue(_fps);
         while (_recentFps.Count > 5) _recentFps.Dequeue();
-        
+
         if (_recentFps.Count < 3) return;
-        
-     var avgFps = _recentFps.Average();
-        
-        // If FPS is dropping significantly below target, reduce quality
-  if (avgFps < _adaptiveTargetFps && _quality > _minQuality)
+
+        var avgFps = _recentFps.Average();
+        var qualityChanged = false;
+
+        // Adaptive bitrate based on network conditions
+        if (_adaptiveBitrate && _rttSamples.Count > 3)
         {
-    var newQuality = Math.Max(_minQuality, _quality - 5);
-    if (newQuality != _quality)
+         _avgRtt = _rttSamples.Average();
+
+          // High latency or packet loss - reduce quality aggressively
+  if (_avgRtt > 50 || _droppedFrames > 5)
             {
-       SetQuality(newQuality);
-     _lastQualityAdjustment = DateTime.Now;
-     Console.WriteLine($"Adaptive quality: Reduced to {_quality} (FPS: {avgFps:F1})");
-       }
-        }
-        // If FPS is good and we have headroom, increase quality slightly
-  else if (avgFps >= _targetFps * 0.95 && _quality < _maxQuality)
-      {
-            var newQuality = Math.Min(_maxQuality, _quality + 2);
-         if (newQuality != _quality)
+      var reduction = _avgRtt > 100 ? 10 : (_avgRtt > 50 ? 5 : 3);
+       var newQuality = Math.Max(_minQuality, _quality - reduction);
+       if (newQuality != _quality)
+    {
+      SetQuality(newQuality);
+   qualityChanged = true;
+        Console.WriteLine($"Adaptive bitrate: Reduced to {_quality} (RTT: {_avgRtt:F1}ms, dropped: {_droppedFrames})");
+           }
+ _droppedFrames = 0; // Reset counter
+            }
+            // Low latency and stable - can increase quality
+      else if (_avgRtt < 20 && _droppedFrames == 0 && avgFps >= _targetFps * 0.95 && _quality < _maxQuality)
             {
+                var newQuality = Math.Min(_maxQuality, _quality + 2);
+  if (newQuality != _quality)
+                {
      SetQuality(newQuality);
-   _lastQualityAdjustment = DateTime.Now;
-                Console.WriteLine($"Adaptive quality: Increased to {_quality} (FPS: {avgFps:F1})");
-            }
-        }
-    }
-
-    private byte[]? CaptureAndEncodeFrame()
-    {
-     try
-   {
-          Bitmap? bitmap = null;
-
-  // Try Desktop Duplication first (fastest, GPU-based)
-     if (_duplicator != null)
-         {
-                bitmap = _duplicator.CaptureFrame();
-            }
-
-     // Fallback to GDI
-            if (bitmap == null)
-     {
-    bitmap = CaptureWithGdi();
-}
-
-            if (bitmap == null) return null;
-
-        // Resize if needed
-            Bitmap finalBitmap;
-  if (bitmap.Width != _width || bitmap.Height != _height)
-  {
-     finalBitmap = ResizeFast(bitmap, _width, _height);
-           bitmap.Dispose();
+        qualityChanged = true;
+      Console.WriteLine($"Adaptive bitrate: Increased to {_quality} (RTT: {_avgRtt:F1}ms)");
      }
-   else
-            {
-        finalBitmap = bitmap;
             }
-
-            var encodeStart = Stopwatch.GetTimestamp();
-
-   // Encode to JPEG with optimized settings
-            byte[] result;
-  lock (_encodeLock)
-         {
-                _encodeBuffer!.SetLength(0);
-      _encodeBuffer.Position = 0;
-  finalBitmap.Save(_encodeBuffer, _jpegEncoder!, _encoderParams);
-    result = _encodeBuffer.ToArray();
-            }
-
-     _lastEncodeMs = (Stopwatch.GetTimestamp() - encodeStart) * 1000.0 / Stopwatch.Frequency;
-
-            finalBitmap.Dispose();
-     return result;
-        }
-      catch (Exception ex)
-        {
-          Console.WriteLine($"Capture error: {ex.Message}");
-            return null;
-        }
-    }
-
-  private Bitmap ResizeFast(Bitmap source, int width, int height)
-    {
-      var dest = new Bitmap(width, height, PixelFormat.Format24bppRgb);
-        using var g = Graphics.FromImage(dest);
-        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
-        g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighSpeed;
-    g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
-        g.DrawImage(source, 0, 0, width, height);
-    return dest;
  }
 
-    private Bitmap? CaptureWithGdi()
-    {
-        try
+        // FPS-based adjustment (fallback)
+        if (!qualityChanged && _adaptiveQuality)
         {
-  int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-
-        var bitmap = new Bitmap(screenWidth, screenHeight, PixelFormat.Format24bppRgb);
-  using var graphics = Graphics.FromImage(bitmap);
-         graphics.CopyFromScreen(0, 0, 0, 0, new Size(screenWidth, screenHeight), CopyPixelOperation.SourceCopy);
-     return bitmap;
-        }
-        catch
-        {
- return null;
-        }
-  }
-
-    private void BroadcastFrameSync(byte[] frameData)
-    {
-        // Send via UDP (faster, may lose frames)
-        if (_useUdp && _udpServer != null)
-        {
-        List<IPEndPoint> udpClientsCopy;
-            lock (_clientsLock)
-     {
-      udpClientsCopy = [.. _udpClients];
-            }
-
-      // UDP has size limits - fragment if needed
-        if (frameData.Length < 65000)
-    {
-          foreach (var client in udpClientsCopy)
-           {
-         try
-        {
-             _udpServer.Send(frameData, frameData.Length, client);
-              }
-          catch { }
-              }
-      }
-    else
+            // If FPS is dropping significantly below target, reduce quality
+  if (avgFps < _adaptiveTargetFps && _quality > _minQuality)
+   {
+   var newQuality = Math.Max(_minQuality, _quality - 5);
+       if (newQuality != _quality)
       {
-                // Send fragmented for large frames
-    SendFragmentedUdp(frameData, udpClientsCopy);
+            SetQuality(newQuality);
+               Console.WriteLine($"Adaptive quality: Reduced to {_quality} (FPS: {avgFps:F1})");
+        }
 }
-        }
-
-        // Send via WebSocket (reliable but slightly higher latency)
-        List<WebSocket> wsClientsCopy;
-        lock (_clientsLock)
-        {
-          wsClientsCopy = [.. _wsClients];
-        }
-
-        var deadClients = new List<WebSocket>();
-
-        // Use synchronous send for lower latency
-        foreach (var client in wsClientsCopy)
-      {
-       try
-          {
-       if (client.State == WebSocketState.Open)
-     {
-                    client.SendAsync(
-       new ArraySegment<byte>(frameData),
-   WebSocketMessageType.Binary,
-           true,
-          CancellationToken.None).Wait(50); // Short timeout
-         }
-   else
-    {
-           deadClients.Add(client);
-    }
-            }
-    catch
-{
-  deadClients.Add(client);
-    }
-        }
-
-  if (deadClients.Count > 0)
-        {
- lock (_clientsLock)
-     {
-            foreach (var dead in deadClients)
-              {
-   _wsClients.Remove(dead);
-     }
-   }
-   }
-    }
-
-    private void SendFragmentedUdp(byte[] frameData, List<IPEndPoint> clients)
-    {
-        const int maxPacketSize = 60000;
-        const int headerSize = 8; // 4 bytes frame ID + 2 bytes packet index + 2 bytes total packets
-    var payloadSize = maxPacketSize - headerSize;
-        var totalPackets = (frameData.Length + payloadSize - 1) / payloadSize;
-        var frameId = Environment.TickCount;
-
-        for (int i = 0; i < totalPackets; i++)
-  {
-     var offset = i * payloadSize;
-        var length = Math.Min(payloadSize, frameData.Length - offset);
-            var packet = new byte[headerSize + length];
-
-    // Header
-     BitConverter.GetBytes(frameId).CopyTo(packet, 0);
-     BitConverter.GetBytes((ushort)i).CopyTo(packet, 4);
-            BitConverter.GetBytes((ushort)totalPackets).CopyTo(packet, 6);
-
-            // Payload
-            Buffer.BlockCopy(frameData, offset, packet, headerSize, length);
-
-         foreach (var client in clients)
+            // If FPS is good and we have headroom, increase quality slightly
+        else if (avgFps >= _targetFps * 0.95 && _quality < _maxQuality)
             {
-    try
-         {
-    _udpServer?.Send(packet, packet.Length, client);
+  var newQuality = Math.Min(_maxQuality, _quality + 2);
+ if (newQuality != _quality)
+    {
+        SetQuality(newQuality);
+     Console.WriteLine($"Adaptive quality: Increased to {_quality} (FPS: {avgFps:F1})");
        }
-         catch { }
      }
         }
+
+        _lastQualityAdjustment = DateTime.Now;
+    }
+
+    /// <summary>
+    /// Record RTT sample from client ping
+    /// </summary>
+    public void RecordRttSample(double rttMs)
+    {
+        lock (_rttSamples)
+        {
+     _rttSamples.Enqueue(rttMs);
+   while (_rttSamples.Count > 10) _rttSamples.Dequeue();
+     }
+        _lastRtt = rttMs;
+    }
+
+    /// <summary>
+    /// Record a dropped frame (client didn't receive)
+    /// </summary>
+    public void RecordDroppedFrame()
+    {
+        _droppedFrames++;
+    }
+
+    /// <summary>
+  /// Enable/disable adaptive bitrate based on network conditions
+    /// </summary>
+    public void SetAdaptiveBitrate(bool enabled)
+    {
+        _adaptiveBitrate = enabled;
+      Console.WriteLine($"Adaptive bitrate: {(enabled ? "enabled" : "disabled")}");
     }
 }
 
