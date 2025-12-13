@@ -85,6 +85,7 @@ Filename: "{tmp}\ViGEmBus_Setup.exe"; Parameters: "/passive /norestart"; StatusM
 Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""Synktra Companion API"" dir=in action=allow protocol=tcp localport=19500"; StatusMsg: "Adding firewall rules..."; Flags: runhidden waituntilterminated; Tasks: firewall
 Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""Synktra Companion Stream WS"" dir=in action=allow protocol=tcp localport=19501"; Flags: runhidden waituntilterminated; Tasks: firewall
 Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""Synktra Companion Stream UDP"" dir=in action=allow protocol=udp localport=19502"; Flags: runhidden waituntilterminated; Tasks: firewall
+Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""Synktra Companion Audio"" dir=in action=allow protocol=tcp localport=19503"; Flags: runhidden waituntilterminated; Tasks: firewall
 Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""Synktra Companion Discovery"" dir=in action=allow protocol=udp localport=5001"; Flags: runhidden waituntilterminated; Tasks: firewall
 
 ; Launch after install
@@ -95,6 +96,7 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""Synktra Companion API"""; Flags: runhidden
 Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""Synktra Companion Stream WS"""; Flags: runhidden
 Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""Synktra Companion Stream UDP"""; Flags: runhidden
+Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""Synktra Companion Audio"""; Flags: runhidden
 Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""Synktra Companion Discovery"""; Flags: runhidden
 
 [UninstallDelete]

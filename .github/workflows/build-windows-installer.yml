@@ -28,7 +28,7 @@ jobs:
       
       - run: dotnet build SynktraCompanion/SynktraCompanion.csproj -c Release --no-restore
       
-      - run: dotnet publish SynktraCompanion/SynktraCompanion.csproj -c Release -r win-x64 --self-contained true
+      - run: dotnet publish SynktraCompanion/SynktraCompanion.csproj -c Release -r win-x64 --self-contained true -o SynktraCompanion/bin/Release/net9.0-windows/win-x64/publish
       
       - name: Download ViGEmBus
         shell: bash
@@ -49,7 +49,66 @@ jobs:
           name: SynktraCompanion-Installer
           path: SynktraCompanion/Installer/Output/*.exe
       
+      - name: Create Portable ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "SynktraCompanion/bin/Release/net9.0-windows/win-x64/publish/*" -DestinationPath "SynktraCompanion-Portable-win-x64.zip"
+      
       - uses: actions/upload-artifact@v4
         with:
           name: SynktraCompanion-Portable
-          path: SynktraCompanion/bin/Release/net9.0-windows/win-x64/publish/
+          path: SynktraCompanion-Portable-win-x64.zip
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', steps.version.outputs.version) }}
+          name: Synktra Companion v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            SynktraCompanion/Installer/Output/*.exe
+            SynktraCompanion-Portable-win-x64.zip
+          body: |
+            ## Synktra Companion v${{ steps.version.outputs.version }}
+            
+            Desktop companion app for Gaming Hub - stream your PC games to your iPhone.
+                    
+            ### Features
+              - ?? Virtual Xbox 360 controller support (ViGEmBus)
+              - ?? Low-latency video streaming (WebSocket + UDP)
+              - ?? Audio streaming support
+              - ?? GPU priority optimization for gaming
+              - ?? Auto-discovery on local network
+              - ?? Game library scanning (Steam, Epic, GOG, Xbox)
+              
+            ### Downloads
+              - **SynktraCompanion-Setup.exe** - Full installer with ViGEmBus driver
+              - **SynktraCompanion-Portable-win-x64.zip** - Portable version (no installation)
+                  
+                  ### Requirements
+                  - Windows 10/11 (64-bit)
+                  - .NET 9 Runtime (bundled in installer)
+                  - ViGEmBus driver (optional, for virtual controller)
+                  
+                  ### Ports Used
+                  | Port   | Protocol | Description       |
+                  |--------|----------|-------------------|
+                  | 19500  | TCP      | REST API          |
+                  | 19501  | TCP      | Video WebSocket    |
+                  | 19502  | UDP      | Video UDP         |
+                  | 19503  | TCP      | Audio WebSocket    |
+                  | 5001   | UDP      | Discovery         |
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
